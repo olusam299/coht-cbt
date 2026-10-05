@@ -1,0 +1,109 @@
+import { createFileRoute } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { Download } from "lucide-react";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import { RoleShell, SectionHeader } from "@/components/layout/RoleShell";
+import { SUPERADMIN_NAV } from "@/components/layout/nav-config";
+import { ALL_DEPARTMENTS, DepartmentFilter } from "@/components/admin/DepartmentFilter";
+import { ServiceState } from "@/components/ServiceState";
+import { resultsService } from "@/services";
+import type { ExportFormat } from "@/lib/departments";
+
+export const Route = createFileRoute("/superadmin/results")({
+  head: () => ({
+    meta: [
+      { title: "Results & Reports | COHT CBT SuperAdmin" },
+      {
+        name: "description",
+        content:
+          "Department-aware CBT results with Excel and PDF export. Results are visible to SuperAdmins only.",
+      },
+      { property: "og:title", content: "Results & Reports | COHT CBT SuperAdmin" },
+      { property: "og:description", content: "Department-aware CBT results and exports." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
+    ],
+  }),
+  component: SuperAdminResults,
+});
+
+function SuperAdminResults() {
+  const [department, setDepartment] = useState(ALL_DEPARTMENTS);
+  const scope = department === ALL_DEPARTMENTS ? {} : { departmentId: department };
+
+  const results = useQuery({
+    queryKey: ["results", department],
+    queryFn: () => resultsService.listResults(scope),
+    retry: false,
+  });
+
+  async function exportResults(format: ExportFormat) {
+    try {
+      const { url } = await resultsService.exportResults({ ...scope, format });
+      window.open(url, "_blank", "noopener");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Export failed");
+    }
+  }
+
+  return (
+    <RoleShell
+      role="superadmin"
+      items={SUPERADMIN_NAV}
+      title="Results & reports"
+      subtitle="SuperAdmin only — admins never see results"
+    >
+      <SectionHeader
+        title="Results"
+        actions={
+          <>
+            <DepartmentFilter value={department} onChange={setDepartment} />
+            <Button variant="outline" className="tap-target rounded-xl" onClick={() => exportResults("xlsx")}>
+              <Download className="size-4" aria-hidden /> Excel
+            </Button>
+            <Button variant="outline" className="tap-target rounded-xl" onClick={() => exportResults("pdf")}>
+              <Download className="size-4" aria-hidden /> PDF
+            </Button>
+          </>
+        }
+      />
+      <ServiceState
+        query={results}
+        skeleton="inline"
+        emptyTitle="No results yet"
+        emptyDescription="Scored submissions will be listed here per department and paper."
+      >
+        {(rows) => (
+          <div className="surface-card overflow-x-auto rounded-2xl">
+            <table className="w-full min-w-[44rem] text-sm">
+              <thead className="text-left text-xs uppercase tracking-wide text-muted-foreground">
+                <tr className="border-b">
+                  <th className="p-3">Candidate</th>
+                  <th className="p-3">Matric</th>
+                  <th className="p-3">Paper</th>
+                  <th className="p-3">Answered</th>
+                  <th className="p-3">Score</th>
+                  <th className="p-3">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row) => (
+                  <tr key={row.attemptId} className="border-b last:border-0">
+                    <td className="p-3 font-medium">{row.fullName}</td>
+                    <td className="p-3 tabular-nums">{row.matricNumber}</td>
+                    <td className="p-3">{row.courseCode}</td>
+                    <td className="p-3 tabular-nums">{row.answered}/{row.total}</td>
+                    <td className="p-3 tabular-nums">{row.scorePercent ?? "—"}</td>
+                    <td className="p-3">{row.status}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </ServiceState>
+    </RoleShell>
+  );
+}
