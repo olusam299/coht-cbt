@@ -1,9 +1,6 @@
 import type {
   AdminService,
   AuthService,
-  DataManagementService,
-  ImportEntity,
-  ImportValidationResult,
   ExamService,
   ProfileService,
   ResultsService,
@@ -770,21 +767,6 @@ export const systemService: SystemService = {
   },
 };
 
-export const dataManagementService: DataManagementService = {
-  async validateImport() {
-    await requireRole(["superadmin"]);
-    throw new BackendNotConnectedError("dataManagement.validateImport");
-  },
-  async confirmImport() {
-    await requireRole(["superadmin"]);
-    throw new BackendNotConnectedError("dataManagement.confirmImport");
-  },
-  async downloadTemplate() {
-    await requireRole(["superadmin"]);
-    throw new BackendNotConnectedError("dataManagement.downloadTemplate");
-  },
-};
-
 export const resultsService: ResultsService = {
   async listResults(filter) {
     await requireRole(["superadmin"]);
@@ -887,9 +869,6 @@ export const resultsService: ResultsService = {
 
 export type {
   AdminAccountRow,
-  DataManagementService,
-  ImportEntity,
-  ImportValidationResult,
   AdminService,
   AuthService,
   ExamMode,

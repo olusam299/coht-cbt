@@ -1,31 +1,40 @@
-# ExamFlow Foundation
+# COHT CBT — Frontend
 
-Build the first production-quality frontend foundation for the College of Health CBT portal redesign. This is a PURE CBT/examination application — do NOT include Study Centre, study lessons, lecture notes, revision/study resources, or any study-app functionality. The existing uploaded single-file GAS frontend is the functional reference, but do not copy its old visual design. Create a modern, beautiful, professional examination platform UI with genuinely adaptive UX across phone, tablet/iPad, and desktop. The interface must adapt composition, navigation, density, touch targets, panels/sheets, and interaction patterns to the device rather than merely shrinking a desktop layout. Establish the design system and student-facing shell first: authentication/login, student dashboard/exam availability, and especially a polished responsive exam workspace with authoritative timer/progress, question area, answer options, question navigator, navigation controls, submit flow states, loading/error/empty states. Preserve the product's three exam contexts where relevant: Regular, Pharmacy PreNational, and Continuous. Do not implement fake backend behavior or invent data; create clean service interfaces/placeholders for the existing Supabase backend architecture. The exam UI must be designed so timer, progress and Submit remain accessible on mobile as well as desktop. Use React + TypeScript + Tailwind/shadcn-style architecture, reusable components, accessibility, keyboard support on desktop, touch-first controls on mobile, tablet/iPad-specific layouts, orientation-aware composition, and restrained professional motion. Start with the frontend foundation and student experience; admin/SuperAdmin can follow after the student experience is solid. The old GAS frontend should be treated only as a behavioral reference, not a design reference.
+Computer-based testing portal for the College of Health Technology. Student, Admin and SuperAdmin interfaces.
 
-This project was built with [Lovable](https://lovable.dev).
+**Stack:** TanStack Start (React 19, Vite), TypeScript, Tailwind v4, shadcn/ui, TanStack Query, Supabase JS.
+**Backend:** the `cbtmobile-coht` repo (Supabase: Postgres, RLS, RPCs, edge functions). All scoring, timing and authorization live there; this app only calls RPCs.
 
-## Build with Lovable
-
-Continue developing this project in the [Lovable editor](https://lovable.dev/projects/07832222-96e1-408d-9e38-04f6193dde8b).
-
-- **Ship faster**: describe what you want to build and Lovable handles the code.
-- **Stay in sync**: every change made in Lovable is committed straight to this repository.
-- **Full ownership**: this code is yours. Push to `main` on GitHub and your changes sync back into Lovable, ready for your next prompt.
-
-## Development
-
-Prefer working locally? You need Node.js and npm — [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating).
+## Run
 
 ```sh
-git clone <this-repository-url>
-cd <repository-name>
 npm i
+cp .env.example .env   # set the two variables below
 npm run dev
 ```
 
+| Variable | Purpose |
+| --- | --- |
+| `VITE_SUPABASE_URL` | Supabase project URL |
+| `VITE_SUPABASE_ANON_KEY` | Supabase anon (public) key |
 
-## Frontend role preview
+## Layout
 
-Until real Supabase authentication and role enforcement are connected, open `/auth` and use the **Frontend preview** controls to inspect the Student, Admin, and SuperAdmin interfaces. These controls are temporary development/testing access and should be removed when real role-based authentication is implemented.
+- `src/routes/` file-based routes: `/` (student), `/exam/$attemptId`, `/admin/*`, `/superadmin/*`, `/auth`, `/onboarding`
+- `src/services/` Supabase service layer (`index.ts` plus `academic`, `data-management`, `exam-management`, `question-bank`, `student-otp`)
+- `src/components/` exam, admin, student and layout components; `ui/` holds only the shadcn primitives in use
+- `src/hooks/`, `src/lib/` exam timer, security hook, shared types
 
-Question numbering is user-facing **1 through N**. Internal arrays may remain zero-based.
+## Student login
+
+Registration number plus a one-time password issued by a SuperAdmin.
+
+## Checks
+
+```sh
+npx tsc --noEmit
+npm run lint
+npm run build
+```
+
+Synced with Lovable; avoid rewriting pushed git history.
