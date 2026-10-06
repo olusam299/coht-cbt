@@ -329,6 +329,12 @@ export const examService: ExamService = {
       (answers ?? []).map((a: any) => [a.question_id, a.selected_option_id]),
     );
 
+    // Strike count is server-side so a page refresh cannot reset it.
+    const { data: strikeCount, error: strikeError } = await supabase.rpc("get_exam_strikes", {
+      p_exam_session_id: attemptId,
+    });
+    if (strikeError) throw new Error(strikeError.message);
+
     const { data: exam, error: examError } = await supabase
       .from("exams")
       .select("id, title, duration_minutes, question_count, exam_courses(courses(code, title))")
@@ -374,7 +380,7 @@ export const examService: ExamService = {
       ),
       flagged: [],
       status: state.session_status === "active" ? "in-progress" : state.session_status,
-      strikes: 0,
+      strikes: Number(strikeCount ?? 0),
       expiresAt: new Date(
         new Date(state.started_at).getTime() +
           exam.duration_minutes * 60_000 +
@@ -472,8 +478,14 @@ export const examService: ExamService = {
     };
   },
 
-  async recordSecurityEvent() {
-    throw new BackendNotConnectedError("exam.recordSecurityEvent");
+  async recordSecurityEvent({ attemptId, type, reason }) {
+    // The server owns the strike count and pauses the session at strike 3.
+    const { error } = await supabase.rpc("record_security_event", {
+      p_exam_session_id: attemptId,
+      p_event_type: type,
+      p_reason: reason,
+    });
+    if (error) throw new Error(error.message);
   },
 };
 

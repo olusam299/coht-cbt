@@ -15,7 +15,7 @@ import { ErrorState, LoadingState } from "@/components/states";
 import { useDevice } from "@/hooks/use-device";
 import { useExamTimer } from "@/hooks/use-exam-timer";
 import { useExamSecurity } from "@/hooks/use-exam-security";
-import { examService, profileService } from "@/services";
+import { authService, examService, profileService } from "@/services";
 import type { AttemptResult, AttemptState } from "@/lib/exam-types";
 
 export const Route = createFileRoute("/exam/$attemptId")({
@@ -204,8 +204,17 @@ function ExamSession({ attempt }: { attempt: AttemptState }) {
               <p className="mt-1 font-display text-xl font-bold tabular-nums">{submission.total}</p>
             </div>
           </div>
-          <Button asChild className="mt-7 tap-target w-full rounded-xl font-semibold">
-            <Link to="/">Return to dashboard</Link>
+          {/* The OTP is rotated on submission, so end this session on shared exam machines. */}
+          <Button
+            className="mt-7 tap-target w-full rounded-xl font-semibold"
+            onClick={() => {
+              void authService
+                .signOut()
+                .catch(() => undefined)
+                .finally(() => window.location.assign("/auth"));
+            }}
+          >
+            Done
           </Button>
         </section>
       </main>
