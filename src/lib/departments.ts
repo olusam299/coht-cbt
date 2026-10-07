@@ -15,9 +15,9 @@ export const DEPARTMENTS: Department[] = [
   { id: "environmental-health", code: "EHT", name: "Environmental Health" },
 ];
 
-export type ExportFormat = "xlsx" | "pdf";
+export type ExportFormat = "csv" | "pdf";
 
 export const EXPORT_FORMAT_LABELS: Record<ExportFormat, string> = {
-  xlsx: "Excel (.xlsx)",
+  csv: "CSV (opens in Excel)",
   pdf: "PDF / Print",
 };

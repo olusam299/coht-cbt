@@ -12,6 +12,7 @@ import type {
 } from "@/lib/exam-security";
 import type { Gender, StudentProfile } from "@/lib/student-profile";
 import type { ExportFormat } from "@/lib/departments";
+import type { ExportResult } from "@/lib/export-file";
 import type { Role } from "@/lib/roles";
 
 /**
@@ -252,14 +253,14 @@ export interface ResultsService {
   listResults(filter: { departmentId?: string; examId?: string }): Promise<ResultRow[]>;
   listRegisteredStudents(filter: { departmentId?: string }): Promise<RegisteredStudentRow[]>;
   getStudentDetail(studentId: string): Promise<RegisteredStudentDetail>;
-  /** Returns a download URL produced server-side; the client never builds files. */
+  /** Builds the file in the browser from live registry/results data. */
   exportRegister(input: {
     departmentId?: string;
     format: ExportFormat;
-  }): Promise<{ url: string }>;
+  }): Promise<ExportResult>;
   exportResults(input: {
     departmentId?: string;
     examId?: string;
     format: ExportFormat;
-  }): Promise<{ url: string }>;
+  }): Promise<ExportResult>;
 }

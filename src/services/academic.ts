@@ -75,4 +75,47 @@ export const academicService = {
     const { data, error } = await supabase.rpc("superadmin_create_programme", { p_department_id: input.departmentId, p_code: input.code.trim().toUpperCase(), p_name: input.name.trim(), p_duration_years: input.durationYears ?? null });
     if (error) throw new Error(error.message); if (!data) throw new Error("The server returned no programme."); return data as ProgrammeRecord;
   },
+
+  async updateSession(input: { sessionId: string; name: string; startDate: string | null; endDate: string | null }) {
+    await ensureSuperAdmin();
+    const { error } = await supabase.rpc("superadmin_update_academic_session", {
+      p_session_id: input.sessionId, p_name: input.name.trim(), p_start_date: input.startDate || null, p_end_date: input.endDate || null,
+    });
+    if (error) throw new Error(error.message);
+  },
+  async deleteSession(sessionId: string) {
+    await ensureSuperAdmin();
+    const { error } = await supabase.rpc("superadmin_delete_academic_session", { p_session_id: sessionId });
+    if (error) throw new Error(error.message);
+  },
+  async updateDepartment(input: { departmentId: string; code: string; name: string }) {
+    await ensureSuperAdmin();
+    const { error } = await supabase.rpc("superadmin_update_department", { p_department_id: input.departmentId, p_code: input.code.trim().toUpperCase(), p_name: input.name.trim() });
+    if (error) throw new Error(error.message);
+  },
+  async setDepartmentActive(input: { departmentId: string; active: boolean }) {
+    await ensureSuperAdmin();
+    const { error } = await supabase.rpc("superadmin_set_department_active", { p_department_id: input.departmentId, p_is_active: input.active });
+    if (error) throw new Error(error.message);
+  },
+  async deleteDepartment(departmentId: string) {
+    await ensureSuperAdmin();
+    const { error } = await supabase.rpc("superadmin_delete_department", { p_department_id: departmentId });
+    if (error) throw new Error(error.message);
+  },
+  async updateProgramme(input: { programmeId: string; code: string; name: string; durationYears: number | null }) {
+    await ensureSuperAdmin();
+    const { error } = await supabase.rpc("superadmin_update_programme", { p_programme_id: input.programmeId, p_code: input.code.trim().toUpperCase(), p_name: input.name.trim(), p_duration_years: input.durationYears });
+    if (error) throw new Error(error.message);
+  },
+  async setProgrammeActive(input: { programmeId: string; active: boolean }) {
+    await ensureSuperAdmin();
+    const { error } = await supabase.rpc("superadmin_set_programme_active", { p_programme_id: input.programmeId, p_is_active: input.active });
+    if (error) throw new Error(error.message);
+  },
+  async deleteProgramme(programmeId: string) {
+    await ensureSuperAdmin();
+    const { error } = await supabase.rpc("superadmin_delete_programme", { p_programme_id: programmeId });
+    if (error) throw new Error(error.message);
+  },
 };

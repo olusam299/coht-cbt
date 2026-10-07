@@ -13,6 +13,7 @@ import { StudentAvatar } from "@/components/StudentAvatar";
 import { ServiceState } from "@/components/ServiceState";
 import { resultsService } from "@/services";
 import { type ExportFormat } from "@/lib/departments";
+import { deliverExport } from "@/lib/export-file";
 import { supabase } from "@/lib/supabase";
 
 export const Route = createFileRoute("/superadmin/students")({
@@ -49,15 +50,15 @@ function SuperAdminStudents() {
     return list.filter((s) => s.fullName.toLowerCase().includes(needle) || s.matricNumber.toLowerCase().includes(needle));
   }, [students.data, term]);
   async function exportRegister(format: ExportFormat) {
-    try { const { url } = await resultsService.exportRegister({ ...(department === ALL_DEPARTMENTS ? {} : { departmentId: department }), format }); window.open(url, "_blank", "noopener"); }
+    try { deliverExport(await resultsService.exportRegister({ ...(department === ALL_DEPARTMENTS ? {} : { departmentId: department }), format })); }
     catch (error) { toast.error(error instanceof Error ? error.message : "Export failed"); }
   }
   return <RoleShell role="superadmin" items={SUPERADMIN_NAV} title="Students" subtitle="Registered candidates by department">
     <SectionHeader title="Register" actions={<>
       <DepartmentFilter value={department} onChange={setDepartment} />
       <Input value={term} onChange={(event) => setTerm(event.target.value)} placeholder="Search name or matric" aria-label="Search students" className="tap-target w-full rounded-xl sm:w-60" />
-      <Button variant="outline" className="tap-target rounded-xl" onClick={() => exportRegister("xlsx")}><Download className="size-4" aria-hidden /> Excel</Button>
-      <Button variant="outline" className="tap-target rounded-xl" onClick={() => exportRegister("pdf")}><Download className="size-4" aria-hidden /> PDF</Button>
+      <Button variant="outline" className="tap-target rounded-xl" onClick={() => exportRegister("csv")}><Download className="size-4" aria-hidden /> CSV (Excel)</Button>
+      <Button variant="outline" className="tap-target rounded-xl" onClick={() => exportRegister("pdf")}><Download className="size-4" aria-hidden /> Print / PDF</Button>
     </>} />
     <ServiceState query={students} emptyTitle="No registered students" emptyDescription="Candidates appear here once the registry is connected.">
       {() => <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{rows.map((student) =>

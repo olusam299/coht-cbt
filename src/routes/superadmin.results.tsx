@@ -10,6 +10,7 @@ import { ALL_DEPARTMENTS, DepartmentFilter } from "@/components/admin/Department
 import { ServiceState } from "@/components/ServiceState";
 import { resultsService } from "@/services";
 import type { ExportFormat } from "@/lib/departments";
+import { deliverExport } from "@/lib/export-file";
 
 export const Route = createFileRoute("/superadmin/results")({
   head: () => ({
@@ -41,8 +42,7 @@ function SuperAdminResults() {
 
   async function exportResults(format: ExportFormat) {
     try {
-      const { url } = await resultsService.exportResults({ ...scope, format });
-      window.open(url, "_blank", "noopener");
+      deliverExport(await resultsService.exportResults({ ...scope, format }));
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Export failed");
     }
@@ -60,11 +60,11 @@ function SuperAdminResults() {
         actions={
           <>
             <DepartmentFilter value={department} onChange={setDepartment} />
-            <Button variant="outline" className="tap-target rounded-xl" onClick={() => exportResults("xlsx")}>
-              <Download className="size-4" aria-hidden /> Excel
+            <Button variant="outline" className="tap-target rounded-xl" onClick={() => exportResults("csv")}>
+              <Download className="size-4" aria-hidden /> CSV (Excel)
             </Button>
             <Button variant="outline" className="tap-target rounded-xl" onClick={() => exportResults("pdf")}>
-              <Download className="size-4" aria-hidden /> PDF
+              <Download className="size-4" aria-hidden /> Print / PDF
             </Button>
           </>
         }

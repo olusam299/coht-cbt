@@ -9,6 +9,7 @@ import type {
   SystemService,
 } from "./types";
 import type { MonitoredAttempt, SecurityEvent } from "@/lib/exam-security";
+import { csvExport, printableExport, todayStamp, type ExportColumn } from "@/lib/export-file";
 import type { Student } from "@/lib/exam-types";
 import type { Role } from "@/lib/roles";
 import { supabase } from "@/lib/supabase";
@@ -895,12 +896,53 @@ export const resultsService: ResultsService = {
     };
   },
 
-  async exportRegister() {
-    throw new BackendNotConnectedError("results.exportRegister");
+  async exportRegister({ departmentId, format }) {
+    await requireRole(["superadmin"]);
+
+    const students = await resultsService.listRegisteredStudents(departmentId ? { departmentId } : {});
+    const { data: departments } = await supabase.rpc("superadmin_list_departments");
+    const names = new Map<string, string>(
+      ((departments ?? []) as { id: string; name: string }[]).map((d) => [d.id, d.name]),
+    );
+
+    type Row = (typeof students)[number];
+    const columns: ExportColumn<Row>[] = [
+      { header: "Matric number", value: (r) => r.matricNumber },
+      { header: "Full name", value: (r) => r.fullName },
+      { header: "Department", value: (r) => names.get(r.departmentId ?? "") ?? "" },
+      { header: "Programme", value: (r) => r.programme },
+      { header: "Level", value: (r) => r.level },
+    ];
+
+    return format === "csv"
+      ? csvExport(`student-register-${todayStamp()}.csv`, columns, students)
+      : printableExport("Student register", columns, students);
   },
 
-  async exportResults() {
-    throw new BackendNotConnectedError("results.exportResults");
+  async exportResults({ departmentId, examId, format }) {
+    await requireRole(["superadmin"]);
+
+    const results = await resultsService.listResults({
+      ...(departmentId ? { departmentId } : {}),
+      ...(examId ? { examId } : {}),
+    });
+
+    type Row = (typeof results)[number];
+    const columns: ExportColumn<Row>[] = [
+      { header: "Matric number", value: (r) => r.matricNumber },
+      { header: "Full name", value: (r) => r.fullName },
+      { header: "Course", value: (r) => r.courseCode },
+      { header: "Examination", value: (r) => r.examTitle },
+      { header: "Score (%)", value: (r) => (r.scorePercent == null ? "" : r.scorePercent.toFixed(1)) },
+      { header: "Answered", value: (r) => r.answered },
+      { header: "Questions", value: (r) => r.total },
+      { header: "Status", value: (r) => r.status },
+      { header: "Submitted at", value: (r) => r.submittedAt },
+    ];
+
+    return format === "csv"
+      ? csvExport(`exam-results-${todayStamp()}.csv`, columns, results)
+      : printableExport("Examination results", columns, results);
   },
 };
 
