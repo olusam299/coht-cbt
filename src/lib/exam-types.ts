@@ -48,6 +48,17 @@ export interface Question {
   options: QuestionOption[];
 }
 
+export interface AttemptPaper {
+  /** exam_session_course id: the candidate's instance of this paper. */
+  id: string;
+  /** exam_course id: the paper definition. */
+  examCourseId: string;
+  courseCode: string;
+  courseTitle: string;
+  status: "available" | "active" | "submitted";
+  paperOrder: number;
+}
+
 export interface AttemptState {
   attemptId: string;
   exam: {
@@ -69,6 +80,10 @@ export interface AttemptState {
   /** Server clock at the time this payload was produced (ISO 8601, UTC). */
   serverNow: string;
   submittedAt: string | null;
+  /** Examination mode; Pharmacy PreNational shows a paper switcher. */
+  mode?: ExamContext;
+  papers?: AttemptPaper[];
+  activePaperId?: string;
 }
 
 export interface AttemptResult {
@@ -76,4 +91,6 @@ export interface AttemptResult {
   submittedAt: string;
   answered: number;
   total: number;
+  /** false when more papers remain (Continuous mode); the candidate stays signed in. */
+  allPapersSubmitted?: boolean;
 }

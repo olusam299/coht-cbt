@@ -4,9 +4,11 @@ import type {
   ExamService,
   ProfileService,
   ResultsService,
+  SecurityLogRow,
   SupervisionService,
   SystemService,
 } from "./types";
+import type { MonitoredAttempt, SecurityEvent } from "@/lib/exam-security";
 import type { Student } from "@/lib/exam-types";
 import type { Role } from "@/lib/roles";
 import { supabase } from "@/lib/supabase";
@@ -234,6 +236,28 @@ export const profileService: ProfileService = {
   },
 };
 
+/** exam_session_course id of the paper each attempt is currently sitting. */
+const activePaperByAttempt = new Map<string, string>();
+
+function examContext(mode: string | null | undefined) {
+  return mode === "pharmacy_prenational" ? "pharmacy-prenational" : (mode ?? "regular");
+}
+
+async function activePaperId(attemptId: string): Promise<string> {
+  const cached = activePaperByAttempt.get(attemptId);
+  if (cached) return cached;
+
+  const { data, error } = await supabase.rpc("get_exam_session_state_v2", {
+    p_exam_session_id: attemptId,
+  });
+  const state = firstRow<any>(data as any, error);
+  if (!state.active_exam_session_course_id) {
+    throw new Error("No active examination paper was found.");
+  }
+  activePaperByAttempt.set(attemptId, state.active_exam_session_course_id);
+  return state.active_exam_session_course_id;
+}
+
 export const examService: ExamService = {
   async listExams() {
     await requireRole(["student", "admin", "superadmin"]);
@@ -280,22 +304,30 @@ export const examService: ExamService = {
   async startAttempt(examId) {
     await requireRole(["student"]);
 
-    const { data: courses, error: courseError } = await supabase
-      .from("exam_courses")
-      .select("id, paper_order")
-      .eq("exam_id", examId)
-      .order("paper_order");
-
-    if (courseError) throw new Error(courseError.message);
-    const examCourse = courses?.[0];
-    if (!examCourse) throw new Error("No examination paper is configured for this examination.");
-
-    const { data, error } = await supabase.rpc("start_exam_session", {
+    // Papers this student is registered for, with progress. Resume the
+    // active paper, otherwise start the first one not yet submitted.
+    const { data: paperRows, error: paperError } = await supabase.rpc("list_my_exam_papers", {
       p_exam_id: examId,
-      p_exam_course_id: examCourse.id,
     });
+    if (paperError) throw new Error(paperError.message);
 
+    const papers = (paperRows ?? []) as any[];
+    if (!papers.length) {
+      throw new Error("You are not registered for any paper in this examination.");
+    }
+    const paper =
+      papers.find((p) => p.paper_status === "active") ??
+      papers.find((p) => p.paper_status !== "submitted");
+    if (!paper) {
+      throw new Error("You have already submitted every paper in this examination.");
+    }
+
+    const { data, error } = await supabase.rpc("start_exam_paper_v2", {
+      p_exam_id: examId,
+      p_exam_course_id: paper.exam_course_id,
+    });
     const started = firstRow<any>(data as any, error);
+    activePaperByAttempt.set(started.exam_session_id, started.exam_session_course_id);
 
     return this.getAttempt(started.exam_session_id);
   },
@@ -303,92 +335,100 @@ export const examService: ExamService = {
   async getAttempt(attemptId) {
     await requireRole(["student"]);
 
-    const { data, error } = await supabase.rpc("get_exam_session_state", {
+    const { data, error } = await supabase.rpc("get_exam_session_state_v2", {
       p_exam_session_id: attemptId,
     });
     const state = firstRow<any>(data as any, error);
 
+    if (state.session_status === "submitted" || !state.active_exam_session_course_id) {
+      throw new Error(
+        "There is no active paper in this attempt. It may already have been submitted.",
+      );
+    }
+    const paperId: string = state.active_exam_session_course_id;
+    activePaperByAttempt.set(attemptId, paperId);
+
     // Question options contain the authoritative answer key, so students
     // must never read question_options directly. The secure RPC returns only
-    // id/key/text after validating ownership of this exam session.
-    const { data: questions, error: questionError } = await supabase.rpc(
-      "get_exam_questions",
-      { p_exam_session_id: attemptId },
-    );
+    // id/key/text after validating ownership of this exam session and paper.
+    const [questionsRes, answersRes, clock, strikesRes, examRes] = await Promise.all([
+      supabase.rpc("get_exam_questions_v2", {
+        p_exam_session_id: attemptId,
+        p_exam_session_course_id: paperId,
+      }),
+      supabase
+        .from("answers")
+        .select("question_id, selected_option_id")
+        .eq("exam_session_id", attemptId),
+      this.heartbeat(attemptId),
+      // Strike count is server-side so a page refresh cannot reset it.
+      supabase.rpc("get_exam_strikes", { p_exam_session_id: attemptId }),
+      supabase.from("exams").select("id, title").eq("id", state.exam_id).single(),
+    ]);
 
-    if (questionError) throw new Error(questionError.message);
+    if (questionsRes.error) throw new Error(questionsRes.error.message);
+    if (answersRes.error) throw new Error(answersRes.error.message);
+    if (strikesRes.error) throw new Error(strikesRes.error.message);
+    if (examRes.error) throw new Error(examRes.error.message);
 
-    const { data: answers, error: answerError } = await supabase
-      .from("answers")
-      .select("question_id, selected_option_id")
-      .eq("exam_session_id", attemptId);
+    const questions = (questionsRes.data ?? []).reduce((acc: any[], row: any) => {
+      let question = acc.find((item) => item.id === row.question_id);
+      if (!question) {
+        question = {
+          id: row.question_id,
+          number: row.question_number,
+          text: row.question_text,
+          options: [],
+          selectedOptionIds: [],
+          flagged: false,
+        };
+        acc.push(question);
+      }
+      question.options.push({ id: row.option_id, key: row.option_key, text: row.option_text });
+      return acc;
+    }, []);
 
-    if (answerError) throw new Error(answerError.message);
+    // Answers are stored per session; keep only those for this paper so the
+    // progress count and navigator are per paper.
+    const questionIds = new Set(questions.map((q: any) => q.id));
+    const paperAnswers = (answersRes.data ?? []).filter((a: any) => questionIds.has(a.question_id));
+    const answerMap = new Map(paperAnswers.map((a: any) => [a.question_id, a.selected_option_id]));
+    for (const question of questions) {
+      if (answerMap.has(question.id)) question.selectedOptionIds = [answerMap.get(question.id)];
+    }
 
-    const answerMap = new Map(
-      (answers ?? []).map((a: any) => [a.question_id, a.selected_option_id]),
-    );
-
-    // Strike count is server-side so a page refresh cannot reset it.
-    const { data: strikeCount, error: strikeError } = await supabase.rpc("get_exam_strikes", {
-      p_exam_session_id: attemptId,
-    });
-    if (strikeError) throw new Error(strikeError.message);
-
-    const { data: exam, error: examError } = await supabase
-      .from("exams")
-      .select("id, title, duration_minutes, question_count, exam_courses(courses(code, title))")
-      .eq("id", state.exam_id)
-      .single();
-
-    if (examError) throw new Error(examError.message);
-    const examRow = exam as any;
+    const papers = ((state.papers ?? []) as any[]).map((p) => ({
+      id: p.id,
+      examCourseId: p.examCourseId,
+      courseCode: p.courseCode,
+      courseTitle: p.courseTitle,
+      status: p.status,
+      paperOrder: p.paperOrder,
+    }));
+    const activePaper = papers.find((p) => p.id === paperId);
+    const context = examContext(state.mode);
 
     return {
       attemptId,
       exam: {
-        id: exam.id,
-        title: exam.title,
-        courseCode: examRow.exam_courses?.[0]?.courses?.code ?? "",
-        context: "",
+        id: examRes.data.id,
+        title: examRes.data.title,
+        courseCode: activePaper?.courseCode ?? "",
+        context,
       },
-      questions: (questions ?? []).reduce((acc: any[], row: any) => {
-        let question = acc.find((item) => item.id === row.question_id);
-        if (!question) {
-          question = {
-            id: row.question_id,
-            number: row.question_number,
-            text: row.question_text,
-            options: [],
-            selectedOptionIds: [],
-            flagged: false,
-          };
-          acc.push(question);
-        }
-        question.options.push({
-          id: row.option_id,
-          key: row.option_key,
-          text: row.option_text,
-        });
-        if (answerMap.has(row.question_id)) {
-          question.selectedOptionIds = [answerMap.get(row.question_id)];
-        }
-        return acc;
-      }, []),
+      questions,
       answers: Object.fromEntries(
-        (answers ?? []).map((a: any) => [a.question_id, [a.selected_option_id]]),
+        paperAnswers.map((a: any) => [a.question_id, [a.selected_option_id]]),
       ),
       flagged: [],
       status: state.session_status === "active" ? "in-progress" : state.session_status,
-      strikes: Number(strikeCount ?? 0),
-      expiresAt: new Date(
-        new Date(state.started_at).getTime() +
-          exam.duration_minutes * 60_000 +
-          Number(state.total_paused_seconds ?? 0) * 1000 +
-          Number(state.total_extension_seconds ?? 0) * 1000,
-      ).toISOString(),
-      serverNow: new Date().toISOString(),
-      submittedAt: state.submitted_at,
+      strikes: Number(strikesRes.data ?? 0),
+      expiresAt: clock.expiresAt,
+      serverNow: clock.serverNow,
+      submittedAt: null,
+      mode: context,
+      papers,
+      activePaperId: paperId,
     } as any;
   },
 
@@ -396,18 +436,33 @@ export const examService: ExamService = {
     await requireRole(["student"]);
 
     if (optionIds.length > 1) {
-      throw new Error(
-        "The current database supports one selected option per question.",
-      );
+      throw new Error("The current database supports one selected option per question.");
     }
 
-    const { data, error } = await supabase.rpc("save_exam_answer", {
+    const { data, error } = await supabase.rpc("save_exam_answer_v2", {
       p_exam_session_id: attemptId,
+      p_exam_session_course_id: await activePaperId(attemptId),
       p_question_id: questionId,
       p_selected_option_id: optionIds[0] ?? null,
     });
 
     requireData(data, error);
+  },
+
+  async switchPaper({ attemptId, examCourseId }) {
+    await requireRole(["student"]);
+
+    const { data, error } = await supabase.rpc("get_exam_session_state_v2", {
+      p_exam_session_id: attemptId,
+    });
+    const state = firstRow<any>(data as any, error);
+
+    const { data: started, error: startError } = await supabase.rpc("start_exam_paper_v2", {
+      p_exam_id: state.exam_id,
+      p_exam_course_id: examCourseId,
+    });
+    const row = firstRow<any>(started as any, startError);
+    activePaperByAttempt.set(attemptId, row.exam_session_course_id);
   },
 
   async setFlag() {
@@ -419,62 +474,36 @@ export const examService: ExamService = {
   },
 
   async heartbeat(attemptId) {
-    const { data, error } = await supabase.rpc("get_exam_session_state", {
+    // Deadline, pauses and administrator extensions are all computed in the
+    // database; the device clock is never used.
+    const { data, error } = await supabase.rpc("get_exam_clock_v2", {
       p_exam_session_id: attemptId,
     });
-    const state = firstRow<any>(data as any, error);
-
-    const { data: exam, error: examError } = await supabase
-      .from("exams")
-      .select("duration_minutes")
-      .eq("id", state.exam_id)
-      .single();
-
-    if (examError) throw new Error(examError.message);
-
-    const expiresAt = new Date(
-      new Date(state.started_at).getTime() +
-        exam.duration_minutes * 60_000 +
-        Number(state.total_paused_seconds ?? 0) * 1000 +
-        Number(state.total_extension_seconds ?? 0) * 1000,
-    ).toISOString();
+    const row = firstRow<any>(data as any, error);
 
     return {
-      expiresAt,
-      serverNow: new Date().toISOString(),
+      expiresAt: row.expires_at,
+      serverNow: row.server_now,
+      status: row.session_status,
     };
   },
 
   async submitAttempt(attemptId) {
     await requireRole(["student"]);
 
-    const { data: stateData, error: stateError } = await supabase.rpc(
-      "get_exam_session_state",
-      { p_exam_session_id: attemptId },
-    );
-    const state = firstRow<any>(stateData as any, stateError);
-
-    if (!state.exam_session_course_id) {
-      throw new Error("No active examination paper was found.");
-    }
-
-    const requestId = crypto.randomUUID();
-
-    const { data, error } = await supabase.rpc("submit_exam_paper", {
-      p_exam_session_course_id: state.exam_session_course_id,
-      p_submission_request_id: requestId,
+    const { data, error } = await supabase.rpc("submit_exam_paper_v2", {
+      p_exam_session_course_id: await activePaperId(attemptId),
+      p_submission_request_id: crypto.randomUUID(),
     });
-
     const result = firstRow<any>(data as any, error);
+    activePaperByAttempt.delete(attemptId);
 
     return {
       attemptId,
       submittedAt: new Date().toISOString(),
       answered: result.correct_answers + result.wrong_answers,
-      total:
-        result.correct_answers +
-        result.wrong_answers +
-        result.unanswered_questions,
+      total: result.correct_answers + result.wrong_answers + result.unanswered_questions,
+      allPapersSubmitted: Boolean(result.all_papers_submitted),
     };
   },
 
@@ -768,10 +797,6 @@ export const systemService: SystemService = {
     if (error) throw new Error(error.message);
   },
 
-  async clearFingerprintBinding() {
-    await requireRole(["superadmin"]);
-    throw new BackendNotConnectedError("system.clearFingerprintBinding");
-  },
 
   async grantPhotoChangeClearance() {
     await requireRole(["superadmin"]);

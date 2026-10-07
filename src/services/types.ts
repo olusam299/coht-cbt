@@ -55,7 +55,11 @@ export interface ExamService {
     flagged: boolean;
   }): Promise<void>;
   /** Returns the refreshed server deadline; the client never owns the clock. */
-  heartbeat(attemptId: string): Promise<{ expiresAt: string; serverNow: string }>;
+  heartbeat(
+    attemptId: string,
+  ): Promise<{ expiresAt: string; serverNow: string; status: string }>;
+  /** Pharmacy PreNational: make another paper of the same sitting the active one. */
+  switchPaper(input: { attemptId: string; examCourseId: string }): Promise<void>;
   submitAttempt(attemptId: string): Promise<AttemptResult>;
   /**
    * Appends one integrity event to the attempt's audit trail. The reason is
@@ -129,6 +133,7 @@ export interface SystemService {
   /** Clears strikes beyond the normal limit so a paused paper can resume. */
   clearStrikes(input: { attemptId: string; note: string }): Promise<void>;
   setExamMode(mode: ExamMode): Promise<void>;
+  setInstantResults(enabled: boolean): Promise<void>;
   authorizeResultMailing(input: { examId: string }): Promise<void>;
   addTimeExtension(input: { attemptId: string; minutes: number; note?: string }): Promise<void>;
   grantPhotoChangeClearance(input: { studentId: string }): Promise<void>;

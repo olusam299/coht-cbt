@@ -90,7 +90,7 @@ function SuperAdminMonitor() {
       await systemService.addTimeExtension({
         attemptId: extensionTarget.attemptId,
         minutes,
-        note: extensionNote.trim() || undefined,
+        ...(extensionNote.trim() ? { note: extensionNote.trim() } : {}),
       });
       await attempts.refetch();
       toast.success(`${minutes} minutes added to ${extensionTarget.student.fullName}`);

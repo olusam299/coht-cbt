@@ -32,7 +32,7 @@ function SuperAdminStudents() {
       return data ?? [];
     }, staleTime: 5 * 60 * 1000, retry: false,
   });
-  const departmentNames = useMemo(() => new Map((departments.data ?? []).map((d) => [d.id, d.name])), [departments.data]);
+  const departmentNames = useMemo(() => new Map<string, string>((departments.data ?? []).map((d: { id: string; name: string }) => [d.id, d.name] as [string, string])), [departments.data]);
   const students = useQuery({
     queryKey: ["students", department],
     queryFn: () => resultsService.listRegisteredStudents(department === ALL_DEPARTMENTS ? {} : { departmentId: department }),
@@ -63,7 +63,7 @@ function SuperAdminStudents() {
       {() => <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{rows.map((student) =>
         <button key={student.studentId} type="button" onClick={() => setSelectedStudentId(student.studentId)} className="surface-card group flex items-center gap-3 rounded-2xl p-4 text-left transition hover:-translate-y-0.5 hover:shadow-md">
           <StudentAvatar name={student.fullName} photoUrl={student.photoUrl} gender={null} size="lg" />
-          <div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">{student.fullName}</p><p className="truncate text-xs text-muted-foreground">{student.matricNumber}</p><p className="truncate text-xs text-muted-foreground">{departmentNames.get(student.departmentId ?? "") ?? "Unassigned"}{student.level ? ` · ${student.level}` : ""}</p><p className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-primary">View complete record <ChevronRight className="size-3.5" /></p></div>
+          <div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">{student.fullName}</p><p className="truncate text-xs text-muted-foreground">{student.matricNumber}</p><p className="truncate text-xs text-muted-foreground">{departmentNames.get(student.departmentId ?? "") ?? "Unassigned"}{student.level ? ` · ${String(student.level)}` : ""}</p><p className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-primary">View complete record <ChevronRight className="size-3.5" /></p></div>
         </button>)}{!rows.length && !students.isPending ? <p className="col-span-full rounded-2xl border border-dashed p-6 text-sm text-muted-foreground">No student matches the current search.</p> : null}</div>}
     </ServiceState>
     <Dialog open={Boolean(selectedStudentId)} onOpenChange={(open) => !open && setSelectedStudentId(null)}>

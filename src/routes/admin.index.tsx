@@ -47,7 +47,7 @@ function AdminDashboard() {
       subtitle="Only the papers assigned to you"
       actions={
         <Button asChild variant="outline" className="tap-target rounded-xl">
-          <Link to="/admin/monitor">
+          <Link to="/admin/monitor" search={{ paper: undefined }}>
             <MonitorPlay className="size-4" aria-hidden />
             <span className="hidden sm:inline">Live paper</span>
           </Link>

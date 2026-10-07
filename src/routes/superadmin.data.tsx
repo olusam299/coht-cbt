@@ -51,7 +51,7 @@ function parseCsv(text: string): Record<string, unknown>[] {
   }
   if (cell || row.length) { row.push(cell); if (row.some((v) => v.trim() !== "")) rows.push(row); }
   if (!rows.length) return [];
-  const headers = rows[0].map((h) => h.trim().replace(/^\uFEFF/, ""));
+  const headers = (rows[0] ?? []).map((h) => h.trim().replace(/^\uFEFF/, ""));
   return rows.slice(1).map((values) => Object.fromEntries(headers.map((h, i) => [h, (values[i] ?? "").trim()])));
 }
 
@@ -94,7 +94,10 @@ function ImportPanel({ entity }: { entity: ImportEntity }) {
   }
 
   async function validate() {
-    if (!rows.length) return toast.error("Choose an import file first.");
+    if (!rows.length) {
+      toast.error("Choose an import file first.");
+      return;
+    }
     setBusy(true);
     try {
       const result = await dataManagementService.validateImport({ entity, rows });

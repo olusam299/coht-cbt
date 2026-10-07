@@ -77,6 +77,12 @@ export function useExamSecurity({
     [],
   );
 
+  /** Applied when the server reports the session as paused (supervisor action). */
+  const pause = useCallback(
+    () => setState((prev) => (prev.paused ? prev : { ...prev, paused: true, pending: null })),
+    [],
+  );
+
   /** Applied when a supervisor resumes the paper. */
   const resume = useCallback(
     () => setState((prev) => ({ ...prev, paused: false, pending: null })),
@@ -91,5 +97,6 @@ export function useExamSecurity({
     register,
     acknowledge,
     resume,
+    pause,
   };
 }

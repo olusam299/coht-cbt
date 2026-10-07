@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Check, ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
@@ -76,20 +76,41 @@ function ExamWorkspace() {
     );
   }
 
-  return <ExamSession attempt={attempt.data} />;
+  return (
+    <ExamSession
+      // A new paper (Pharmacy PreNational switch) remounts the workspace with fresh answers.
+      key={attempt.data.activePaperId ?? attempt.data.attemptId}
+      attempt={attempt.data}
+      onSwitchPaper={async (examCourseId) => {
+        await examService.switchPaper({ attemptId, examCourseId });
+        await attempt.refetch();
+      }}
+    />
+  );
 }
 
-function ExamSession({ attempt }: { attempt: AttemptState }) {
+function ExamSession({
+  attempt,
+  onSwitchPaper,
+}: {
+  attempt: AttemptState;
+  onSwitchPaper: (examCourseId: string) => Promise<void>;
+}) {
   const { device, orientation, isPhone, isTablet, isTouch } = useDevice();
   const [index, setIndex] = useState(0);
   const [submission, setSubmission] = useState<AttemptResult | null>(null);
   const [answers, setAnswers] = useState(attempt.answers);
+  const answersRef = useRef(answers);
+  answersRef.current = answers;
   const [flagged, setFlagged] = useState(attempt.flagged);
   const [navOpen, setNavOpen] = useState(false);
   const [calcOpen, setCalcOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [switching, setSwitching] = useState(false);
+  const submittingRef = useRef(false);
+  const serverPausedRef = useRef(attempt.status === "paused");
 
   const profile = useQuery({
     queryKey: ["profile", "exam-identity"],
@@ -98,7 +119,12 @@ function ExamSession({ attempt }: { attempt: AttemptState }) {
     staleTime: 5 * 60_000,
   });
 
-  const clock = useExamTimer(attempt.expiresAt, attempt.serverNow);
+  // Deadline, pauses and extensions come from the server clock, refreshed below.
+  const [deadline, setDeadline] = useState({
+    expiresAt: attempt.expiresAt,
+    serverNow: attempt.serverNow,
+  });
+  const clock = useExamTimer(deadline.expiresAt, deadline.serverNow);
   const security = useExamSecurity({
     enabled: !attempt.submittedAt,
     initialStrikes: attempt.strikes ?? 0,
@@ -151,7 +177,8 @@ function ExamSession({ attempt }: { attempt: AttemptState }) {
 
   const submit = useCallback(async () => {
     // A paused paper is held for a supervisor and must never be submitted.
-    if (security.paused) return;
+    if (security.paused || submittingRef.current) return;
+    submittingRef.current = true;
     setSubmitting(true);
     try {
       const result = await examService.submitAttempt(attempt.attemptId);
@@ -160,9 +187,77 @@ function ExamSession({ attempt }: { attempt: AttemptState }) {
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : "Submission failed.");
     } finally {
+      submittingRef.current = false;
       setSubmitting(false);
     }
   }, [attempt.attemptId, security.paused]);
+
+  const { pause: pauseExam, resume: resumeExam } = security;
+
+  // Poll the server clock: applies supervisor pauses/resumes, time extensions and
+  // forced submissions without a reload, and never trusts the device clock.
+  useEffect(() => {
+    if (submission) return;
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const beat = await examService.heartbeat(attempt.attemptId);
+        if (cancelled) return;
+        setDeadline({ expiresAt: beat.expiresAt, serverNow: beat.serverNow });
+        if (beat.status === "paused") {
+          serverPausedRef.current = true;
+          pauseExam();
+        } else if (beat.status === "active" && serverPausedRef.current) {
+          // Only a server-side pause that has now ended may lift the overlay.
+          serverPausedRef.current = false;
+          resumeExam();
+        } else if (beat.status === "submitted") {
+          setSubmission({
+            attemptId: attempt.attemptId,
+            submittedAt: new Date().toISOString(),
+            answered: Object.values(answersRef.current).filter((v) => v.length > 0).length,
+            total: attempt.questions.length,
+            allPapersSubmitted: true,
+          });
+        }
+      } catch {
+        // Transient network error: keep the last known deadline and try again.
+      }
+    };
+    const id = window.setInterval(() => void poll(), 15_000);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void poll();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [attempt.attemptId, attempt.questions.length, submission, pauseExam, resumeExam]);
+
+  // Time is up: submit what has been saved. Retries until the server accepts it.
+  useEffect(() => {
+    if (!clock.expired || submission || security.paused) return;
+    void submit();
+    const id = window.setInterval(() => void submit(), 8_000);
+    return () => window.clearInterval(id);
+  }, [clock.expired, submission, security.paused, submit]);
+
+  const switchPaper = useCallback(
+    async (examCourseId: string) => {
+      setSwitching(true);
+      setSaveError(null);
+      try {
+        await onSwitchPaper(examCourseId);
+      } catch (err) {
+        setSaveError(err instanceof Error ? err.message : "Could not switch paper.");
+      } finally {
+        setSwitching(false);
+      }
+    },
+    [onSwitchPaper],
+  );
 
   // Keyboard support for pointer-based devices.
   useEffect(() => {
@@ -204,18 +299,29 @@ function ExamSession({ attempt }: { attempt: AttemptState }) {
               <p className="mt-1 font-display text-xl font-bold tabular-nums">{submission.total}</p>
             </div>
           </div>
-          {/* The OTP is rotated on submission, so end this session on shared exam machines. */}
-          <Button
-            className="mt-7 tap-target w-full rounded-xl font-semibold"
-            onClick={() => {
-              void authService
-                .signOut()
-                .catch(() => undefined)
-                .finally(() => window.location.assign("/auth"));
-            }}
-          >
-            Done
-          </Button>
+          {submission.allPapersSubmitted === false ? (
+            <>
+              <p className="mt-5 text-sm text-muted-foreground">
+                You have more papers to sit. Start the next one from your dashboard.
+              </p>
+              <Button asChild className="mt-4 tap-target w-full rounded-xl font-semibold">
+                <Link to="/">Back to dashboard</Link>
+              </Button>
+            </>
+          ) : (
+            // The OTP is rotated once the whole sitting ends, so sign out on shared machines.
+            <Button
+              className="mt-7 tap-target w-full rounded-xl font-semibold"
+              onClick={() => {
+                void authService
+                  .signOut()
+                  .catch(() => undefined)
+                  .finally(() => window.location.assign("/auth"));
+              }}
+            >
+              Done
+            </Button>
+          )}
         </section>
       </main>
     );
@@ -264,6 +370,31 @@ function ExamSession({ attempt }: { attempt: AttemptState }) {
         studentPhotoUrl={profile.data?.photoUrl ?? null}
         studentGender={profile.data?.gender ?? null}
       />
+
+      {attempt.mode === "pharmacy-prenational" && (attempt.papers?.length ?? 0) > 1 ? (
+        <nav aria-label="Papers in this sitting" className="border-b bg-card/60">
+          <div className="mx-auto flex max-w-[110rem] gap-2 overflow-x-auto px-3 py-2 sm:px-6">
+            {(attempt.papers ?? []).map((paper) => (
+              <Button
+                key={paper.id}
+                size="sm"
+                variant={paper.id === attempt.activePaperId ? "default" : "outline"}
+                className="tap-target shrink-0 rounded-xl"
+                disabled={
+                  switching || submitting || security.paused || paper.status === "submitted"
+                }
+                aria-current={paper.id === attempt.activePaperId ? "true" : undefined}
+                onClick={() => {
+                  if (paper.id !== attempt.activePaperId) void switchPaper(paper.examCourseId);
+                }}
+              >
+                {paper.courseCode}
+                {paper.status === "submitted" ? " · done" : ""}
+              </Button>
+            ))}
+          </div>
+        </nav>
+      ) : null}
 
       <div className="mx-auto flex w-full max-w-[110rem] flex-1 gap-6 px-3 py-5 sm:px-6 lg:py-8">
         <main className="min-w-0 flex-1 pb-24 lg:pb-8">
