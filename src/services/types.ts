@@ -135,6 +135,8 @@ export interface SystemService {
   clearStrikes(input: { attemptId: string; note: string }): Promise<void>;
   setExamMode(mode: ExamMode): Promise<void>;
   setInstantResults(enabled: boolean): Promise<void>;
+  /** Submits papers whose server deadline has passed; returns how many were submitted. */
+  sweepExpiredPapers(): Promise<number>;
   authorizeResultMailing(input: { examId: string }): Promise<void>;
   addTimeExtension(input: { attemptId: string; minutes: number; note?: string }): Promise<void>;
   grantPhotoChangeClearance(input: { studentId: string }): Promise<void>;

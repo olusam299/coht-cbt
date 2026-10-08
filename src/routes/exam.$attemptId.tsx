@@ -172,7 +172,13 @@ function ExamSession({
     );
     void examService
       .setFlag({ attemptId: attempt.attemptId, questionId: question.id, flagged: next })
-      .catch(() => undefined);
+      .catch((err: unknown) => {
+        // Roll back so the screen never shows a flag the server does not have.
+        setFlagged((prev) =>
+          next ? prev.filter((id) => id !== question.id) : [...prev, question.id],
+        );
+        setSaveError(err instanceof Error ? err.message : "Flag not saved.");
+      });
   }, [attempt.attemptId, flagged, question]);
 
   const submit = useCallback(async () => {

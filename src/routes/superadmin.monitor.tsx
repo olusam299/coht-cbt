@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -56,6 +56,30 @@ function SuperAdminMonitor() {
     queryFn: () => supervisionService.listActiveAttempts(),
     retry: false,
   });
+
+  // Backstop for papers left open after a browser closes. The database also runs
+  // this every minute when pg_cron is enabled; this keeps it working without it.
+  const refetchAttempts = attempts.refetch;
+  useEffect(() => {
+    let stopped = false;
+    const sweep = async () => {
+      try {
+        const submitted = await systemService.sweepExpiredPapers();
+        if (!stopped && submitted > 0) {
+          toast.info(`${submitted} expired paper${submitted === 1 ? " was" : "s were"} submitted automatically.`);
+          void refetchAttempts();
+        }
+      } catch {
+        // Not fatal: the scheduled database job may already be handling expiry.
+      }
+    };
+    void sweep();
+    const id = window.setInterval(() => void sweep(), 60_000);
+    return () => {
+      stopped = true;
+      window.clearInterval(id);
+    };
+  }, [refetchAttempts]);
 
   const visible = useMemo(() => {
     const needle = term.trim().toLowerCase();

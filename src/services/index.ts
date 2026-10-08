@@ -352,7 +352,7 @@ export const examService: ExamService = {
     // Question options contain the authoritative answer key, so students
     // must never read question_options directly. The secure RPC returns only
     // id/key/text after validating ownership of this exam session and paper.
-    const [questionsRes, answersRes, clock, strikesRes, examRes] = await Promise.all([
+    const [questionsRes, answersRes, clock, strikesRes, flagsRes, examRes] = await Promise.all([
       supabase.rpc("get_exam_questions_v2", {
         p_exam_session_id: attemptId,
         p_exam_session_course_id: paperId,
@@ -364,12 +364,14 @@ export const examService: ExamService = {
       this.heartbeat(attemptId),
       // Strike count is server-side so a page refresh cannot reset it.
       supabase.rpc("get_exam_strikes", { p_exam_session_id: attemptId }),
+      supabase.rpc("get_exam_flags", { p_exam_session_id: attemptId }),
       supabase.from("exams").select("id, title").eq("id", state.exam_id).single(),
     ]);
 
     if (questionsRes.error) throw new Error(questionsRes.error.message);
     if (answersRes.error) throw new Error(answersRes.error.message);
     if (strikesRes.error) throw new Error(strikesRes.error.message);
+    if (flagsRes.error) throw new Error(flagsRes.error.message);
     if (examRes.error) throw new Error(examRes.error.message);
 
     const questions = (questionsRes.data ?? []).reduce((acc: any[], row: any) => {
@@ -421,7 +423,9 @@ export const examService: ExamService = {
       answers: Object.fromEntries(
         paperAnswers.map((a: any) => [a.question_id, [a.selected_option_id]]),
       ),
-      flagged: [],
+      flagged: ((flagsRes.data ?? []) as { question_id: string }[])
+        .map((row) => row.question_id)
+        .filter((id) => questions.some((q: { id: string }) => q.id === id)),
       status: state.session_status === "active" ? "in-progress" : state.session_status,
       strikes: Number(strikesRes.data ?? 0),
       expiresAt: clock.expiresAt,
@@ -466,12 +470,14 @@ export const examService: ExamService = {
     activePaperByAttempt.set(attemptId, row.exam_session_course_id);
   },
 
-  async setFlag() {
-    /*
-     * The current confirmed schema has no persistent flag column/table and no
-     * flag RPC. Do not keep this state only in the browser.
-     */
-    throw new BackendNotConnectedError("exam.setFlag");
+  async setFlag({ attemptId, questionId, flagged }) {
+    await requireRole(["student"]);
+    const { error } = await supabase.rpc("set_exam_question_flag", {
+      p_exam_session_id: attemptId,
+      p_question_id: questionId,
+      p_flagged: flagged,
+    });
+    if (error) throw new Error(error.message);
   },
 
   async heartbeat(attemptId) {
@@ -790,6 +796,13 @@ export const systemService: SystemService = {
     });
 
     if (error) throw new Error(error.message);
+  },
+
+  async sweepExpiredPapers() {
+    await requireRole(["superadmin"]);
+    const { data, error } = await supabase.rpc("superadmin_sweep_expired_exam_sessions");
+    if (error) throw new Error(error.message);
+    return Number(data ?? 0);
   },
 
   async setInstantResults(enabled) {
