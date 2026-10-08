@@ -211,7 +211,7 @@ function AuthPage() {
 
           <p className="mt-6 text-xs text-muted-foreground">
             {isStaff
-              ? "Administrative access is verified against your Supabase Auth account and active portal role."
+              ? "Administrative access requires an active administrator account."
               : "Trouble signing in? Contact your exam officer."}
           </p>
 

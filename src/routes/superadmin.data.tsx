@@ -218,7 +218,7 @@ function SuperAdminData() {
     <Card className="surface-card rounded-2xl border-destructive/20 p-5">
       <div>
         <p className="font-display font-bold">Clear selected data</p>
-        <p className="mt-1 max-w-4xl text-sm text-muted-foreground">Use these targeted actions when correcting an import. Each button calls a protected SuperAdmin RPC and clears only its named data set. Courses and Question Bank refuse to delete when doing so would silently destroy dependent examination data.</p>
+        <p className="mt-1 max-w-4xl text-sm text-muted-foreground">Use these targeted actions when correcting an import. Each button clears only its named data set. Courses and Question Bank refuse to delete when doing so would silently destroy dependent examination data.</p>
       </div>
       <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Button variant="outline" className="min-h-12 justify-start rounded-xl border-destructive/30" disabled={clearStudents.isPending} onClick={() => confirmAction("Clear ALL registered students? This removes their student registrations, exam sessions/results, OTPs, attendance and student Auth accounts. Departments, programmes, courses, examinations and staff accounts are preserved. Continue?", () => clearStudents.mutate())}>

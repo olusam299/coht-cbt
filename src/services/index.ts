@@ -767,14 +767,25 @@ export const systemService: SystemService = {
 
   async clearStrikes({ attemptId, note }) {
     await requireRole(["superadmin"]);
-    const { error } = await supabase.rpc("superadmin_clear_strikes", { p_exam_session_id: attemptId, p_note: note });
+    if (note.trim().length < 3) throw new Error("Give a reason for clearing the strikes.");
+    const { data, error } = await supabase.rpc("superadmin_clear_strikes", { p_exam_session_id: attemptId, p_note: note });
     if (error) throw new Error(error.message);
+    return Number(data ?? 0);
   },
 
-  async setExamMode(mode) {
+  async extendExamTimeBulk({ examId, examCourseId, minutes, reason }) {
     await requireRole(["superadmin"]);
-    const { error } = await supabase.rpc("superadmin_set_exam_mode", { p_mode: mode });
+    if (!Number.isFinite(minutes) || minutes < 1 || minutes > 240) {
+      throw new Error("Extension must be between 1 and 240 minutes.");
+    }
+    const { data, error } = await supabase.rpc("superadmin_extend_exam_time_bulk", {
+      p_exam_id: examId,
+      p_exam_course_id: examCourseId ?? null,
+      p_extension_minutes: Math.round(minutes),
+      p_reason: reason?.trim() || null,
+    });
     if (error) throw new Error(error.message);
+    return Number(data ?? 0);
   },
 
   async authorizeResultMailing() {
@@ -963,7 +974,6 @@ export type {
   AdminAccountRow,
   AdminService,
   AuthService,
-  ExamMode,
   ExamService,
   PaperAssignment,
   ProfileService,

@@ -120,7 +120,6 @@ export interface AdminAccountRow {
   lastSeenAt: string | null;
 }
 
-export type ExamMode = "live" | "practice" | "locked";
 
 /**
  * SuperAdmin-only privileged operations. Every one of these is authorised
@@ -132,8 +131,10 @@ export interface SystemService {
   setAdminActive(input: { adminId: string; active: boolean }): Promise<void>;
   changeAdminPassword(input: { adminId: string; password: string }): Promise<void>;
   /** Clears strikes beyond the normal limit so a paused paper can resume. */
-  clearStrikes(input: { attemptId: string; note: string }): Promise<void>;
-  setExamMode(mode: ExamMode): Promise<void>;
+  /** Returns how many strikes were cleared. */
+  clearStrikes(input: { attemptId: string; note: string }): Promise<number>;
+  /** Adds time to every active or paused sitting of an examination (optionally one paper). Returns how many were extended. */
+  extendExamTimeBulk(input: { examId: string; examCourseId?: string | undefined; minutes: number; reason?: string | undefined }): Promise<number>;
   setInstantResults(enabled: boolean): Promise<void>;
   /** Submits papers whose server deadline has passed; returns how many were submitted. */
   sweepExpiredPapers(): Promise<number>;

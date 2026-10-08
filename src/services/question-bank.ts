@@ -1,6 +1,6 @@
 import { supabase } from "@/lib/supabase";
 
-export type QuestionImportRow = { exam_id:string; question_number:string|number; question_text:string; option_a:string; option_b:string; option_c:string; option_d:string; option_e?:string; correct_option:string };
+export type QuestionImportRow = { exam_id:string; exam_course_id?:string | undefined; question_number:string|number; question_text:string; option_a:string; option_b:string; option_c:string; option_d:string; option_e?:string; correct_option:string };
 export type ValidationRow = { row_number:number; status:"valid"|"error"; message:string };
 
 export const questionBankService = {
@@ -22,12 +22,12 @@ export const questionBankService = {
     }));
   },
   async validate(rows: QuestionImportRow[]) {
-    const { data, error } = await supabase.rpc("superadmin_validate_question_import", { p_rows: rows });
+    const { data, error } = await supabase.rpc("superadmin_validate_question_import_v2", { p_rows: rows });
     if (error) throw new Error(error.message);
     return (data ?? []) as ValidationRow[];
   },
   async confirm(rows: QuestionImportRow[]) {
-    const { data, error } = await supabase.rpc("superadmin_confirm_question_import", { p_rows: rows });
+    const { data, error } = await supabase.rpc("superadmin_confirm_question_import_v2", { p_rows: rows });
     if (error) throw new Error(error.message);
     return data?.[0] ?? { imported:0, updated:0, total_questions:0 };
   },

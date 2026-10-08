@@ -22,10 +22,10 @@ export function NotConnectedState({
       <span className="grid size-11 place-items-center rounded-full bg-warning/15 text-warning-foreground">
         <PlugZap className="size-5" aria-hidden />
       </span>
-      <h2 className="text-base font-semibold">Backend not connected</h2>
+      <h2 className="text-base font-semibold">Not available</h2>
       <p className="text-sm text-muted-foreground">
         {description ??
-          "This screen is ready and will populate as soon as the examination backend is wired in."}
+          "This feature is not available yet."}
       </p>
       <code className="rounded-lg bg-secondary px-2 py-1 text-xs text-muted-foreground">
         {operation}
