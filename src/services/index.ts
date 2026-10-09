@@ -498,20 +498,45 @@ export const examService: ExamService = {
   async submitAttempt(attemptId) {
     await requireRole(["student"]);
 
-    const { data, error } = await supabase.rpc("submit_exam_paper_v2", {
+    // The student wrapper returns progress only; marks come from getResults and
+    // are visible solely when the examination allows instant results.
+    const { data, error } = await supabase.rpc("submit_exam_paper_for_student", {
       p_exam_session_course_id: await activePaperId(attemptId),
       p_submission_request_id: crypto.randomUUID(),
     });
     const result = firstRow<any>(data as any, error);
     activePaperByAttempt.delete(attemptId);
 
+    const results = await this.getResults(attemptId);
+
     return {
       attemptId,
       submittedAt: new Date().toISOString(),
-      answered: result.correct_answers + result.wrong_answers,
-      total: result.correct_answers + result.wrong_answers + result.unanswered_questions,
+      answered: Number(result.answered_questions),
+      total: Number(result.total_questions),
       allPapersSubmitted: Boolean(result.all_papers_submitted),
+      ...(results.length ? { results } : {}),
     };
+  },
+
+  async getResults(attemptId) {
+    await requireRole(["student"]);
+    // Row-level security returns rows only when the examination shows instant results.
+    const { data, error } = await supabase
+      .from("exam_results")
+      .select("total_questions, correct_answers, percentage, exam_session_courses(exam_courses(courses(code, title)))")
+      .eq("exam_session_id", attemptId);
+    if (error) return [];
+    return ((data ?? []) as any[]).map((row) => {
+      const course = row.exam_session_courses?.exam_courses?.courses;
+      return {
+        courseCode: course?.code ?? "Paper",
+        courseTitle: course?.title ?? "",
+        correct: Number(row.correct_answers ?? 0),
+        total: Number(row.total_questions ?? 0),
+        percentage: row.percentage == null ? null : Number(row.percentage),
+      };
+    });
   },
 
   async recordSecurityEvent({ attemptId, type, reason }) {
@@ -816,11 +841,6 @@ export const systemService: SystemService = {
     return Number(data ?? 0);
   },
 
-  async setInstantResults(enabled) {
-    await requireRole(["superadmin"]);
-    const { error } = await supabase.rpc("superadmin_set_instant_results", { p_enabled: enabled });
-    if (error) throw new Error(error.message);
-  },
 
 
   async grantPhotoChangeClearance() {

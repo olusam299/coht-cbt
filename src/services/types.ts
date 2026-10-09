@@ -1,5 +1,6 @@
 import type {
   AttemptResult,
+  PaperResult,
   AttemptState,
   ExamSummary,
   Student,
@@ -62,6 +63,8 @@ export interface ExamService {
   /** Pharmacy PreNational: make another paper of the same sitting the active one. */
   switchPaper(input: { attemptId: string; examCourseId: string }): Promise<void>;
   submitAttempt(attemptId: string): Promise<AttemptResult>;
+  /** The candidate's own marks; empty unless the examination allows instant results. */
+  getResults(attemptId: string): Promise<PaperResult[]>;
   /**
    * Appends one integrity event to the attempt's audit trail. The reason is
    * always recorded. Pausing at the strike limit is enforced server-side too;
@@ -135,7 +138,6 @@ export interface SystemService {
   clearStrikes(input: { attemptId: string; note: string }): Promise<number>;
   /** Adds time to every active or paused sitting of an examination (optionally one paper). Returns how many were extended. */
   extendExamTimeBulk(input: { examId: string; examCourseId?: string | undefined; minutes: number; reason?: string | undefined }): Promise<number>;
-  setInstantResults(enabled: boolean): Promise<void>;
   /** Submits papers whose server deadline has passed; returns how many were submitted. */
   sweepExpiredPapers(): Promise<number>;
   authorizeResultMailing(input: { examId: string }): Promise<void>;

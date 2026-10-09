@@ -218,12 +218,16 @@ function ExamSession({
           serverPausedRef.current = false;
           resumeExam();
         } else if (beat.status === "submitted") {
+          // Submitted elsewhere (supervisor or server): show the confirmation and any allowed marks.
+          const results = await examService.getResults(attempt.attemptId);
+          if (cancelled) return;
           setSubmission({
             attemptId: attempt.attemptId,
             submittedAt: new Date().toISOString(),
             answered: Object.values(answersRef.current).filter((v) => v.length > 0).length,
             total: attempt.questions.length,
             allPapersSubmitted: true,
+            ...(results.length ? { results } : {}),
           });
         }
       } catch {
@@ -305,6 +309,24 @@ function ExamSession({
               <p className="mt-1 font-display text-xl font-bold tabular-nums">{submission.total}</p>
             </div>
           </div>
+          {submission.results?.length ? (
+            <div className="mt-6 grid gap-2 text-left">
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Your result</p>
+              {submission.results.map((r) => (
+                <div key={r.courseCode + r.courseTitle} className="flex items-center justify-between gap-3 rounded-2xl bg-secondary px-4 py-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold">{r.courseCode}</p>
+                    {r.courseTitle ? <p className="truncate text-xs text-muted-foreground">{r.courseTitle}</p> : null}
+                  </div>
+                  <div className="shrink-0 text-right">
+                    <p className="font-display text-xl font-bold tabular-nums">{r.percentage == null ? "—" : `${r.percentage.toFixed(r.percentage % 1 === 0 ? 0 : 1)}%`}</p>
+                    <p className="text-xs text-muted-foreground tabular-nums">{r.correct} / {r.total} correct</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : null}
+
           {submission.allPapersSubmitted === false ? (
             <>
               <p className="mt-5 text-sm text-muted-foreground">

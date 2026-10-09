@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Eye, LockKeyhole, MailCheck, TimerReset } from "lucide-react";
+import { LockKeyhole, MailCheck, TimerReset } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -20,7 +20,6 @@ const ALL_PAPERS = "all";
 const QUICK_MINUTES = [5, 10, 15, 30];
 
 function SettingsPage() {
-  const [instantResults, setInstantResults] = useState(false);
   const [mailing, setMailing] = useState(false);
 
   return (
@@ -31,20 +30,6 @@ function SettingsPage() {
       subtitle="Protected controls for examination behaviour and supervision."
     >
       <section>
-        <SectionHeader
-          title="Student result visibility"
-          description="Control whether eligible students can see their result immediately after submission."
-        />
-        <div className="mt-4 flex items-center justify-between rounded-2xl border p-5">
-          <div className="flex gap-3">
-            <Eye className="mt-0.5 size-5" />
-            <Label className="text-base">Allow instant result viewing</Label>
-          </div>
-          <Switch checked={instantResults} onCheckedChange={setInstantResults} />
-        </div>
-      </section>
-
-      <section className="mt-8">
         <SectionHeader title="Result mailing" description="Authorize release of results by email after an examination." />
         <div className="mt-4 flex items-center justify-between rounded-2xl border p-5">
           <div className="flex gap-3">

@@ -86,11 +86,22 @@ export interface AttemptState {
   activePaperId?: string;
 }
 
+/** One paper's marks. Only returned when the examination allows students to see results. */
+export interface PaperResult {
+  courseCode: string;
+  courseTitle: string;
+  correct: number;
+  total: number;
+  percentage: number | null;
+}
+
 export interface AttemptResult {
   attemptId: string;
   submittedAt: string;
   answered: number;
   total: number;
+  /** Present only when the examination shows instant results to students. */
+  results?: PaperResult[];
   /** false when more papers remain (Continuous mode); the candidate stays signed in. */
   allPapersSubmitted?: boolean;
 }
