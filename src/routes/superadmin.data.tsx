@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { useMutation } from "@tanstack/react-query";
 import { CheckCircle2, Download, FileUp, RefreshCw, ShieldCheck, TriangleAlert, UploadCloud, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -8,8 +8,6 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { questionBankService } from "@/services/question-bank";
 import { RoleShell, SectionHeader, StatTile } from "@/components/layout/RoleShell";
 import { SUPERADMIN_NAV } from "@/components/layout/nav-config";
 import { dataManagementService } from "@/services/data-management";
@@ -20,6 +18,9 @@ export const Route = createFileRoute("/superadmin/data")({
   head: () => ({ meta: [{ title: "Data Management | COHT CBT SuperAdmin" }] }),
   component: SuperAdminData,
 });
+
+// Question uploads live on the Question Bank page, which handles papers and answer keys.
+const TAB_ENTITIES = ["students", "courses", "registrations"] as const satisfies readonly ImportEntity[];
 
 const ENTITY_META: Record<ImportEntity, { label: string; description: string }> = {
   students: { label: "Students", description: "Register or update candidates against the authoritative Department → Programme structure." },
@@ -84,17 +85,9 @@ function ImportPanel({ entity }: { entity: ImportEntity }) {
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState(false);
 
-  // Question files do not carry an exam id. The examination is chosen here and
-  // attached to every row, so nobody has to copy a UUID out of the database.
-  const isQuestions = entity === "questions";
-  const [examId, setExamId] = useState("");
-  const exams = useQuery({ queryKey: ["import-exams"], queryFn: questionBankService.listExams, enabled: isQuestions, retry: false });
-  const importRows = useMemo(() => (isQuestions ? rows.map((r) => ({ ...r, exam_id: examId })) : rows), [isQuestions, rows, examId]);
-
   async function loadFile(next: File | null) {
     setFile(next); setValidation(null); setRows([]);
     if (!next) return;
-    if (isQuestions && !examId) { toast.error("Choose the examination first, then choose the file."); setFile(null); return; }
     try {
       const parsed = await readImportFile(next);
       if (!parsed.length) throw new Error("The file contains no data rows.");
@@ -110,7 +103,7 @@ function ImportPanel({ entity }: { entity: ImportEntity }) {
     }
     setBusy(true);
     try {
-      const result = await dataManagementService.validateImport({ entity, rows: importRows });
+      const result = await dataManagementService.validateImport({ entity, rows });
       setValidation(result);
       if (result.errorRows) toast.error(`${result.errorRows} row(s) need correction before confirmation.`);
       else toast.success("Validation completed. Review the warnings before confirming.");
@@ -126,7 +119,7 @@ function ImportPanel({ entity }: { entity: ImportEntity }) {
       // persists its OWN server-normalized rows. It therefore expects the
       // human-facing rows (department_code/programme_code), NOT normalizedRows,
       // which carry department_id/programme_id and would fail re-validation.
-      const result = await dataManagementService.confirmImport({ entity, rows: importRows });
+      const result = await dataManagementService.confirmImport({ entity, rows });
       toast.success(`Import complete: ${result.imported} added, ${result.updated} updated, ${result.skipped} skipped.`);
       setFile(null); setRows([]); setValidation(null);
     } catch (e) { toast.error(e instanceof Error ? e.message : "Import confirmation failed."); }
@@ -138,12 +131,6 @@ function ImportPanel({ entity }: { entity: ImportEntity }) {
   const warnings = issues.filter((i) => i.severity === "warning");
 
   return <div className="grid gap-5">
-    {isQuestions ? <Card className="surface-card rounded-2xl p-5">
-      <p className="font-display font-bold">Examination</p>
-      <p className="mt-1 text-sm text-muted-foreground">Questions are attached to the examination you pick here. The file does not need an exam id.</p>
-      <div className="mt-3 max-w-xl"><Select value={examId} onValueChange={(v) => { setExamId(v); setValidation(null); }}><SelectTrigger><SelectValue placeholder={exams.isPending ? "Loading examinations…" : "Select examination"} /></SelectTrigger><SelectContent>{(exams.data ?? []).map((e: any) => <SelectItem key={e.id} value={e.id}>{e.title} · {e.question_count} questions</SelectItem>)}</SelectContent></Select></div>
-      {exams.isError ? <p className="mt-2 text-sm text-destructive">{exams.error instanceof Error ? exams.error.message : "Could not load examinations."}</p> : null}
-    </Card> : null}
     <Card className="surface-card rounded-2xl p-5">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
@@ -245,10 +232,10 @@ function SuperAdminData() {
       </div>
     </Card>
     <Tabs defaultValue="students" className="w-full">
-      <TabsList className="grid h-auto w-full grid-cols-2 gap-1 sm:grid-cols-4">
-        {(Object.keys(ENTITY_META) as ImportEntity[]).map((entity) => <TabsTrigger key={entity} value={entity} className="min-h-10 rounded-lg">{ENTITY_META[entity].label}</TabsTrigger>)}
+      <TabsList className="grid h-auto w-full grid-cols-1 gap-1 sm:grid-cols-3">
+        {TAB_ENTITIES.map((entity) => <TabsTrigger key={entity} value={entity} className="min-h-10 rounded-lg">{ENTITY_META[entity].label}</TabsTrigger>)}
       </TabsList>
-      {(Object.keys(ENTITY_META) as ImportEntity[]).map((entity) => <TabsContent key={entity} value={entity} className="mt-5"><p className="mb-5 max-w-3xl text-sm text-muted-foreground">{ENTITY_META[entity].description}</p><ImportPanel entity={entity} /></TabsContent>)}
+      {TAB_ENTITIES.map((entity) => <TabsContent key={entity} value={entity} className="mt-5"><p className="mb-5 max-w-3xl text-sm text-muted-foreground">{ENTITY_META[entity].description}</p><ImportPanel entity={entity} /></TabsContent>)}
     </Tabs>
   </RoleShell>;
 }
