@@ -12,6 +12,8 @@ import type { MonitoredAttempt, SecurityEvent } from "@/lib/exam-security";
 import { csvExport, printableExport, todayStamp, type ExportColumn } from "@/lib/export-file";
 import type { Student } from "@/lib/exam-types";
 import type { Role } from "@/lib/roles";
+import { DeviceConflictError, getDeviceLabel, isDeviceConflictMessage } from "@/lib/device";
+import { functionErrorMessage } from "@/lib/function-error";
 import { supabase } from "@/lib/supabase";
 
 /**
@@ -106,6 +108,13 @@ export const authService: AuthService = {
       throw new Error("This account is not configured as a student account.");
     }
 
+    // One registration number can be active on one device at a time.
+    const { error: deviceError } = await supabase.rpc("student_device_ping", { p_label: getDeviceLabel() });
+    if (deviceError) {
+      await supabase.auth.signOut();
+      throw new Error(deviceError.message);
+    }
+
     const { data: student, error: studentError } = await supabase
       .from("students")
       .select("id, reg_no, full_name, level, programmes(name)")
@@ -151,6 +160,12 @@ export const authService: AuthService = {
   },
 
   async signOut() {
+    // Free this device for the student's next sign-in; harmless for staff accounts.
+    try {
+      await supabase.rpc("release_student_device");
+    } catch {
+      // best effort
+    }
     const { error } = await supabase.auth.signOut();
     if (error) throw new Error(error.message);
   },
@@ -208,11 +223,17 @@ export const profileService: ProfileService = {
     if (!data) return null;
     const studentData = data as any;
 
-    /*
-     * Photo metadata/storage fields are not part of the currently confirmed
-     * academic foundation. Keep this adapter honest until the profile/storage
-     * migration exists.
-     */
+    const { data: statusData, error: statusError } = await supabase.rpc("get_my_photo_status");
+    if (statusError) throw new Error(statusError.message);
+    const photo: any = Array.isArray(statusData) ? statusData[0] : statusData;
+    const uploads = Number(photo?.upload_count ?? 0);
+
+    let photoUrl: string | null = null;
+    if (photo?.photo_path) {
+      const { data: signed } = await supabase.storage.from("student-photos").createSignedUrl(photo.photo_path, 3600);
+      photoUrl = signed?.signedUrl ?? null;
+    }
+
     return {
       studentId: studentData.id,
       fullName: studentData.full_name,
@@ -220,22 +241,57 @@ export const profileService: ProfileService = {
       departmentId: studentData.programmes?.department_id ?? null,
       programme: studentData.programmes?.name ?? null,
       level: studentData.level ?? null,
-      gender: null,
-      photoUrl: null,
-      photoChangeCount: 0,
-      photoLockedUntilClearance: false,
-      onboardingComplete: false,
+      gender: (photo?.gender ?? null) as "male" | "female" | null,
+      photoUrl,
+      // The first upload is not a change; the server allows one change after it.
+      photoChangeCount: Math.max(0, uploads - 1),
+      photoLockedUntilClearance: uploads > 0 && !photo?.can_upload,
+      photoRequestPending: Boolean(photo?.request_pending),
+      onboardingComplete: uploads > 0,
     };
   },
 
-  async uploadIdentifierPhoto() {
-    throw new BackendNotConnectedError("profile.uploadIdentifierPhoto");
+  async uploadIdentifierPhoto({ blob, gender }) {
+    await requireRole(["student"]);
+    const form = new FormData();
+    form.append("photo", blob, "photo.jpg");
+    form.append("gender", gender);
+
+    const { data, error } = await supabase.functions.invoke("upload-student-photo", { body: form });
+    if (error) throw new Error(await functionErrorMessage(error));
+    if (data?.error) throw new Error(String(data.error));
+
+    const profile = await this.getMyProfile();
+    if (!profile) throw new Error("Your profile could not be loaded after the upload.");
+    return profile;
   },
 
-  async requestPhotoChangeClearance() {
-    throw new BackendNotConnectedError("profile.requestPhotoChangeClearance");
+  async requestPhotoChangeClearance(reason) {
+    await requireRole(["student"]);
+    const { error } = await supabase.rpc("request_photo_change_clearance", { p_reason: reason });
+    if (error) throw new Error(error.message);
   },
 };
+
+
+/** Adds signed photo URLs to staff-facing candidate lists. Photos are optional: failures are ignored. */
+async function attachPhotoUrls(items: { student: { id: string; photoUrl: string | null } }[]) {
+  const ids = [...new Set(items.map((item) => item.student.id))];
+  if (!ids.length) return;
+  try {
+    const { data } = await supabase.rpc("get_student_photo_paths", { p_student_ids: ids });
+    const paths = (data ?? []) as { student_id: string; photo_path: string }[];
+    if (!paths.length) return;
+    const { data: signed } = await supabase.storage
+      .from("student-photos")
+      .createSignedUrls(paths.map((p) => p.photo_path), 3600);
+    const urlByPath = new Map((signed ?? []).map((entry) => [entry.path, entry.signedUrl]));
+    const urlByStudent = new Map(paths.map((p) => [p.student_id, urlByPath.get(p.photo_path) ?? null]));
+    for (const item of items) item.student.photoUrl = urlByStudent.get(item.student.id) ?? null;
+  } catch {
+    // the list still works without photos
+  }
+}
 
 /** exam_session_course id of the paper each attempt is currently sitting. */
 const activePaperByAttempt = new Map<string, string>();
@@ -323,7 +379,7 @@ export const examService: ExamService = {
       throw new Error("You have already submitted every paper in this examination.");
     }
 
-    const { data, error } = await supabase.rpc("start_exam_paper_v2", {
+    const { data, error } = await supabase.rpc("start_exam_paper_for_student", {
       p_exam_id: examId,
       p_exam_course_id: paper.exam_course_id,
     });
@@ -353,7 +409,7 @@ export const examService: ExamService = {
     // must never read question_options directly. The secure RPC returns only
     // id/key/text after validating ownership of this exam session and paper.
     const [questionsRes, answersRes, clock, strikesRes, flagsRes, examRes] = await Promise.all([
-      supabase.rpc("get_exam_questions_v2", {
+      supabase.rpc("get_exam_questions_for_student", {
         p_exam_session_id: attemptId,
         p_exam_session_course_id: paperId,
       }),
@@ -444,7 +500,7 @@ export const examService: ExamService = {
       throw new Error("The current database supports one selected option per question.");
     }
 
-    const { data, error } = await supabase.rpc("save_exam_answer_v2", {
+    const { data, error } = await supabase.rpc("save_exam_answer_for_student", {
       p_exam_session_id: attemptId,
       p_exam_session_course_id: await activePaperId(attemptId),
       p_question_id: questionId,
@@ -462,12 +518,20 @@ export const examService: ExamService = {
     });
     const state = firstRow<any>(data as any, error);
 
-    const { data: started, error: startError } = await supabase.rpc("start_exam_paper_v2", {
+    const { data: started, error: startError } = await supabase.rpc("start_exam_paper_for_student", {
       p_exam_id: state.exam_id,
       p_exam_course_id: examCourseId,
     });
     const row = firstRow<any>(started as any, startError);
     activePaperByAttempt.set(attemptId, row.exam_session_course_id);
+  },
+
+  async pingDevice() {
+    const { error } = await supabase.rpc("student_device_ping", { p_label: null });
+    if (error) {
+      if (isDeviceConflictMessage(error.message)) throw new DeviceConflictError(error.message);
+      throw new Error(error.message);
+    }
   },
 
   async setFlag({ attemptId, questionId, flagged }) {
@@ -567,7 +631,7 @@ export const adminService: AdminService = {
     await requireRole(["admin"]);
     const { data, error } = await supabase.rpc("admin_list_paper_candidates", { p_exam_course_id: paperId });
     if (error) throw new Error(error.message);
-    return (data ?? []).map((row: any) => ({
+    const rows = (data ?? []).map((row: any) => ({
       attemptId: row.attempt_id ?? `attendance:${row.student_id}`,
       student: { id: row.student_id, fullName: row.full_name, matricNumber: row.reg_no, photoUrl: null, departmentId: row.department_id },
       courseCode: "", examTitle: "", status: row.attempt_status === "paused" ? "paused" : row.attempt_status === "submitted" ? "submitted" : "in-progress",
@@ -575,6 +639,8 @@ export const adminService: AdminService = {
       lastEvent: null, expiresAt: "", lastSeenAt: row.attendance_at ?? new Date().toISOString(),
       startedAt: row.attendance_at ?? null, supervisorFlagged: Boolean(row.supervisor_flagged),
     })) as MonitoredAttempt[];
+    await attachPhotoUrls(rows);
+    return rows;
   },
 
   async clearStudentIntoPaper({ paperId, studentId, note }) {
@@ -635,7 +701,7 @@ export const supervisionService: SupervisionService = {
     await requireRole(["admin", "superadmin"]);
     const { data, error } = await supabase.rpc("admin_list_active_attempts");
     if (error) throw new Error(error.message);
-    return (data ?? []).map((row: any) => ({
+    const rows = (data ?? []).map((row: any) => ({
       attemptId: row.attempt_id,
       student: { id: row.student_id, fullName: row.student_name, matricNumber: row.matric_number, photoUrl: null },
       courseCode: row.course_code ?? "", examTitle: row.exam_title ?? "",
@@ -643,6 +709,8 @@ export const supervisionService: SupervisionService = {
       strikes: Number(row.strikes ?? 0), supervisorFlagged: Boolean(row.supervisor_flagged),
       lastEvent: null, expiresAt: "", lastSeenAt: row.last_event_at ?? new Date().toISOString(),
     })) as MonitoredAttempt[];
+    await attachPhotoUrls(rows);
+    return rows;
   },
 
   async getAuditTrail(attemptId) {
@@ -725,7 +793,7 @@ async function invokeStaffManagement(body: Record<string, unknown>) {
     },
   });
 
-  if (error) throw new Error(error.message);
+  if (error) throw new Error(await functionErrorMessage(error));
   if (data?.error) throw new Error(String(data.error));
   return data;
 }
@@ -813,10 +881,6 @@ export const systemService: SystemService = {
     return Number(data ?? 0);
   },
 
-  async authorizeResultMailing() {
-    await requireRole(["superadmin"]);
-    throw new BackendNotConnectedError("system.authorizeResultMailing");
-  },
 
   async addTimeExtension({ attemptId, minutes, note }) {
     await requireRole(["superadmin"]);
@@ -843,9 +907,53 @@ export const systemService: SystemService = {
 
 
 
-  async grantPhotoChangeClearance() {
+  async findStudentIdentity(search) {
     await requireRole(["superadmin"]);
-    throw new BackendNotConnectedError("system.grantPhotoChangeClearance");
+    const { data, error } = await supabase.rpc("superadmin_find_student_identity", { p_search: search });
+    if (error) throw new Error(error.message);
+    return ((data ?? []) as any[]).map((row) => ({
+      studentId: row.student_id,
+      matricNumber: row.reg_no,
+      fullName: row.full_name,
+      photoUploads: Number(row.photo_uploads ?? 0),
+      photoCanUpload: Boolean(row.photo_can_upload),
+      hasPhoto: Boolean(row.photo_path),
+      deviceLabel: row.device_label ?? null,
+      deviceLastSeen: row.device_last_seen ?? null,
+      deviceActive: Boolean(row.device_active),
+    }));
+  },
+
+  async grantPhotoChange(studentId) {
+    await requireRole(["superadmin"]);
+    const { error } = await supabase.rpc("superadmin_grant_photo_change", { p_student_id: studentId });
+    if (error) throw new Error(error.message);
+  },
+
+  async releaseStudentDevice(studentId) {
+    await requireRole(["superadmin"]);
+    const { error } = await supabase.rpc("superadmin_release_student_device", { p_student_id: studentId });
+    if (error) throw new Error(error.message);
+  },
+
+  async listPhotoRequests() {
+    await requireRole(["superadmin"]);
+    const { data, error } = await supabase.rpc("superadmin_list_photo_requests");
+    if (error) throw new Error(error.message);
+    return ((data ?? []) as any[]).map((row) => ({
+      requestId: row.request_id,
+      studentId: row.student_id,
+      matricNumber: row.reg_no,
+      fullName: row.full_name,
+      reason: row.reason ?? "",
+      requestedAt: row.requested_at,
+    }));
+  },
+
+  async decidePhotoRequest({ requestId, approve }) {
+    await requireRole(["superadmin"]);
+    const { error } = await supabase.rpc("superadmin_decide_photo_request", { p_request_id: requestId, p_approve: approve });
+    if (error) throw new Error(error.message);
   },
 };
 

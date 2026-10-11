@@ -16,6 +16,7 @@ import { useDevice } from "@/hooks/use-device";
 import { useExamTimer } from "@/hooks/use-exam-timer";
 import { useExamSecurity } from "@/hooks/use-exam-security";
 import { authService, examService, profileService } from "@/services";
+import { DeviceConflictError } from "@/lib/device";
 import type { AttemptResult, AttemptState } from "@/lib/exam-types";
 
 export const Route = createFileRoute("/exam/$attemptId")({
@@ -109,6 +110,7 @@ function ExamSession({
   const [submitting, setSubmitting] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [switching, setSwitching] = useState(false);
+  const [deviceConflict, setDeviceConflict] = useState(false);
   const submittingRef = useRef(false);
   const serverPausedRef = useRef(attempt.status === "paused");
 
@@ -207,6 +209,8 @@ function ExamSession({
     let cancelled = false;
     const poll = async () => {
       try {
+        // Another device taking over this registration number ends this sitting on this device.
+        await examService.pingDevice();
         const beat = await examService.heartbeat(attempt.attemptId);
         if (cancelled) return;
         setDeadline({ expiresAt: beat.expiresAt, serverNow: beat.serverNow });
@@ -230,7 +234,11 @@ function ExamSession({
             ...(results.length ? { results } : {}),
           });
         }
-      } catch {
+      } catch (error) {
+        if (error instanceof DeviceConflictError) {
+          if (!cancelled) setDeviceConflict(true);
+          return;
+        }
         // Transient network error: keep the last known deadline and try again.
       }
     };
@@ -350,6 +358,31 @@ function ExamSession({
               Done
             </Button>
           )}
+        </section>
+      </main>
+    );
+  }
+
+  if (deviceConflict) {
+    return (
+      <main className="grid min-h-screen place-items-center bg-background px-4 py-10">
+        <section className="surface-card w-full max-w-md rounded-3xl p-7 text-center sm:p-9">
+          <h1 className="font-display text-xl font-bold">Signed in on another device</h1>
+          <p className="mt-3 text-sm leading-6 text-muted-foreground">
+            Your account is now active on another device, so this one has been stopped. Your saved answers are safe.
+            Continue on the other device, or ask the invigilator to release your account.
+          </p>
+          <Button
+            className="mt-6 tap-target w-full rounded-xl font-semibold"
+            onClick={() => {
+              void authService
+                .signOut()
+                .catch(() => undefined)
+                .finally(() => window.location.assign("/auth"));
+            }}
+          >
+            Back to sign in
+          </Button>
         </section>
       </main>
     );

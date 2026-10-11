@@ -25,7 +25,7 @@ export const examManagementService = {
   async list() {
     const { data, error } = await supabase
       .from("exams")
-      .select("id,title,mode,duration_minutes,question_count,is_active,show_instant_results,academic_session_id,exam_courses(id,course_id,paper_order,courses(code,title))")
+      .select("id,title,mode,duration_minutes,question_count,is_active,show_instant_results,academic_session_id,exam_courses(id,course_id,paper_order,examiner_email,courses(code,title))")
       .order("created_at", { ascending: false });
     if (error) throw new Error(error.message);
     return (data ?? []).map((e: any) => ({

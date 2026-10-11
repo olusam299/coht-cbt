@@ -22,16 +22,16 @@ export interface StudentProfile {
    */
   photoChangeCount: number;
   photoLockedUntilClearance: boolean;
+  /** A change request is waiting for the SuperAdmin. */
+  photoRequestPending: boolean;
   onboardingComplete: boolean;
 }
 
 export const MAX_SELF_SERVICE_PHOTO_CHANGES = 1;
 
+/** The server decides: self-service allows one change, then SuperAdmin clearance. */
 export function canChangePhoto(profile: StudentProfile): boolean {
-  return (
-    !profile.photoLockedUntilClearance &&
-    profile.photoChangeCount < MAX_SELF_SERVICE_PHOTO_CHANGES + 1
-  );
+  return !profile.photoLockedUntilClearance;
 }
 
 export function greetingFor(date: Date, firstName: string): string {

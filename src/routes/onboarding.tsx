@@ -1,14 +1,14 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
-import { ArrowLeft, Camera, Check, Lock, RefreshCw, Upload } from "lucide-react";
+import { ArrowLeft, Camera, Check, ImageUp, Lock, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { PortalHeader } from "@/components/PortalHeader";
 import { StudentAvatar } from "@/components/StudentAvatar";
 import { LoadingState } from "@/components/states";
 import { NotConnectedState } from "@/components/ServiceState";
-import { profileService, BackendNotConnectedError } from "@/services";
+import { profileService } from "@/services";
 import { formatBytes, processIdentifierPhoto } from "@/lib/image-utils";
 import {
   GENDER_LABELS,
@@ -42,7 +42,8 @@ export const Route = createFileRoute("/onboarding")({
 function OnboardingPage() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
-  const fileRef = useRef<HTMLInputElement>(null);
+  const cameraRef = useRef<HTMLInputElement>(null);
+  const galleryRef = useRef<HTMLInputElement>(null);
   const [gender, setGender] = useState<Gender | null>(null);
   const [preview, setPreview] = useState<{ dataUrl: string; blob: Blob; bytes: number } | null>(
     null,
@@ -66,14 +67,7 @@ function OnboardingPage() {
       void queryClient.invalidateQueries({ queryKey: ["profile"] });
       void navigate({ to: "/" });
     },
-    onError: (error) =>
-      toast.error(
-        error instanceof BackendNotConnectedError
-          ? "Photo upload is not connected to the examination server yet."
-          : error instanceof Error
-            ? error.message
-            : "Upload failed",
-      ),
+    onError: (error) => toast.error(error instanceof Error ? error.message : "Upload failed"),
   });
 
   async function handleFile(file: File | undefined) {
@@ -151,11 +145,22 @@ function OnboardingPage() {
               <div className="grid gap-5">
                 <div>
                   <h2 className="text-sm font-semibold">1. Choose your photo</h2>
+                  {/* Camera: opens the front camera on phones. Gallery: any image on the device. */}
                   <input
-                    ref={fileRef}
+                    ref={cameraRef}
                     type="file"
                     accept="image/*"
                     capture="user"
+                    className="sr-only"
+                    onChange={(event) => {
+                      void handleFile(event.target.files?.[0]);
+                      event.target.value = "";
+                    }}
+                  />
+                  <input
+                    ref={galleryRef}
+                    type="file"
+                    accept="image/*"
                     className="sr-only"
                     onChange={(event) => {
                       void handleFile(event.target.files?.[0]);
@@ -167,14 +172,19 @@ function OnboardingPage() {
                       type="button"
                       className="tap-target rounded-xl"
                       disabled={processing || locked}
-                      onClick={() => fileRef.current?.click()}
+                      onClick={() => cameraRef.current?.click()}
                     >
-                      {preview ? (
-                        <RefreshCw className="size-4" aria-hidden />
-                      ) : (
-                        <Camera className="size-4" aria-hidden />
-                      )}
-                      {processing ? "Preparing…" : preview ? "Retake / replace" : "Take or upload"}
+                      <Camera className="size-4" aria-hidden />
+                      {processing ? "Preparing…" : preview ? "Retake with camera" : "Take a photo"}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="tap-target rounded-xl"
+                      disabled={processing || locked}
+                      onClick={() => galleryRef.current?.click()}
+                    >
+                      <ImageUp className="size-4" aria-hidden /> Choose from gallery
                     </Button>
                   </div>
                 </div>
@@ -238,20 +248,20 @@ function OnboardingPage() {
                   <Button
                     variant="outline"
                     className="tap-target mt-3 rounded-xl"
+                    disabled={profile?.photoRequestPending}
                     onClick={() => {
                       profileService
                         .requestPhotoChangeClearance("Student requested a photo change")
-                        .then(() => toast.success("Clearance request sent"))
+                        .then(() => {
+                          toast.success("Request sent. The SuperAdmin will review it.");
+                          void queryClient.invalidateQueries({ queryKey: ["profile"] });
+                        })
                         .catch((error: unknown) =>
-                          toast.error(
-                            error instanceof BackendNotConnectedError
-                              ? "Clearance requests are not connected yet."
-                              : "Could not send the request.",
-                          ),
+                          toast.error(error instanceof Error ? error.message : "Could not send the request."),
                         );
                     }}
                   >
-                    <Upload className="size-4" aria-hidden /> Request clearance
+                    <Upload className="size-4" aria-hidden /> {profile?.photoRequestPending ? "Request sent, waiting for the SuperAdmin" : "Request clearance"}
                   </Button>
                 </div>
               </section>

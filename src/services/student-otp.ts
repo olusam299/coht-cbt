@@ -1,3 +1,4 @@
+import { functionErrorMessage } from "@/lib/function-error";
 import { supabase } from "@/lib/supabase";
 
 export type StudentOtpRow = {
@@ -50,7 +51,7 @@ export const studentOtpService = {
         studentId: input.studentId || null,
       },
     });
-    if (error) throw new Error(error.message);
+    if (error) throw new Error(await functionErrorMessage(error));
     if (data?.error) throw new Error(String(data.error));
     return data as { students: EnsuredOtp[]; failures: string[] };
   },

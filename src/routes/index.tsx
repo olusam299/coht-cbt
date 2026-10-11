@@ -9,7 +9,8 @@ import { StudentIdentityCard } from "@/components/student/StudentIdentityCard";
 import { ExamInstructions } from "@/components/student/ExamInstructions";
 import { CardSkeletonGrid, EmptyState, ErrorState } from "@/components/states";
 import { NotConnectedState } from "@/components/ServiceState";
-import { BackendNotConnectedError, examService, profileService } from "@/services";
+import { authService, BackendNotConnectedError, examService, profileService } from "@/services";
+import { useDevicePing } from "@/hooks/use-device-ping";
 import { EXAM_CONTEXT_LABELS, type ExamContext } from "@/lib/exam-types";
 
 export const Route = createFileRoute("/")({
@@ -47,6 +48,7 @@ function Dashboard() {
     queryFn: () => examService.listExams(),
     retry: false,
   });
+  useDevicePing(Boolean(profile.data));
 
   const visible = useMemo(
     () =>
@@ -58,9 +60,24 @@ function Dashboard() {
     <div className="min-h-screen bg-background">
       <PortalHeader
         actions={
-          <Button asChild variant="outline" className="tap-target rounded-xl">
-            <Link to="/auth">Sign in</Link>
-          </Button>
+          profile.data ? (
+            <Button
+              variant="outline"
+              className="tap-target rounded-xl"
+              onClick={() => {
+                void authService
+                  .signOut()
+                  .catch(() => undefined)
+                  .finally(() => window.location.assign("/auth"));
+              }}
+            >
+              Sign out
+            </Button>
+          ) : (
+            <Button asChild variant="outline" className="tap-target rounded-xl">
+              <Link to="/auth">Sign in</Link>
+            </Button>
+          )
         }
       />
 

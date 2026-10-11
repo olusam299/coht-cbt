@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { LockKeyhole, MailCheck, TimerReset } from "lucide-react";
+import { Fingerprint, LockKeyhole, MailCheck, TimerReset } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -8,11 +8,11 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
 import { RoleShell, SectionHeader } from "@/components/layout/RoleShell";
 import { SUPERADMIN_NAV } from "@/components/layout/nav-config";
 import { supervisionService, systemService } from "@/services";
 import { examManagementService } from "@/services/exam-management";
+import { resultMailService } from "@/services/result-mail";
 
 export const Route = createFileRoute("/superadmin/settings")({ component: SettingsPage });
 
@@ -20,8 +20,6 @@ const ALL_PAPERS = "all";
 const QUICK_MINUTES = [5, 10, 15, 30];
 
 function SettingsPage() {
-  const [mailing, setMailing] = useState(false);
-
   return (
     <RoleShell
       role="superadmin"
@@ -30,13 +28,12 @@ function SettingsPage() {
       subtitle="Protected controls for examination behaviour and supervision."
     >
       <section>
-        <SectionHeader title="Result mailing" description="Authorize release of results by email after an examination." />
-        <div className="mt-4 flex items-center justify-between rounded-2xl border p-5">
-          <div className="flex gap-3">
-            <MailCheck className="mt-0.5 size-5" />
-            <Label className="text-base">Authorize result mailing</Label>
-          </div>
-          <Switch checked={mailing} onCheckedChange={setMailing} />
+        <SectionHeader
+          title="Result sheet mailing"
+          description="When an examination is closed, each paper's examiner is emailed an Excel and a Word result sheet."
+        />
+        <div className="mt-4">
+          <ResultMailCard />
         </div>
       </section>
 
@@ -45,6 +42,7 @@ function SettingsPage() {
         <div className="mt-4 grid gap-4 xl:grid-cols-2">
           <TimeExtensionCard />
           <StrikeRecoveryCard />
+          <IdentityOverridesCard />
         </div>
       </section>
     </RoleShell>
@@ -244,6 +242,196 @@ function StrikeRecoveryCard() {
         >
           {recover.isPending ? "Working…" : "Clear strikes"}
         </Button>
+      </div>
+    </div>
+  );
+}
+
+const STATUS_STYLE: Record<string, string> = {
+  pending: "bg-amber-100 text-amber-900",
+  sending: "bg-blue-100 text-blue-900",
+  sent: "bg-emerald-100 text-emerald-900",
+  failed: "bg-red-100 text-red-900",
+};
+
+function ResultMailCard() {
+  const qc = useQueryClient();
+  const queue = useQuery({ queryKey: ["result-mail-queue"], queryFn: () => resultMailService.listQueue(30), retry: false });
+  const [testTo, setTestTo] = useState("");
+
+  const refresh = () => qc.invalidateQueries({ queryKey: ["result-mail-queue"] });
+  const fail = (fallback: string) => (e: unknown) => toast.error(e instanceof Error ? e.message : fallback);
+
+  const sendPending = useMutation({
+    mutationFn: () => resultMailService.sendPending(),
+    onSuccess: (r) => {
+      if (!r.processed) toast.info("Nothing is waiting to be sent.");
+      else if (r.failed) toast.warning(`${r.sent} sent, ${r.failed} failed: ${r.failures[0]?.error ?? ""}`, { duration: 12000 });
+      else toast.success(`Sent ${r.sent} result sheet${r.sent === 1 ? "" : "s"}.`);
+      refresh();
+    },
+    onError: fail("Unable to send result sheets."),
+  });
+  const retry = useMutation({
+    mutationFn: async (id: string) => { await resultMailService.retry(id); return resultMailService.sendPending(); },
+    onSuccess: (r) => {
+      if (r.failed) toast.warning(`Still failing: ${r.failures[0]?.error ?? "see the queue"}`, { duration: 12000 });
+      else toast.success("Result sheet sent.");
+      refresh();
+    },
+    onError: fail("Unable to retry."),
+  });
+  const sendTest = useMutation({
+    mutationFn: () => resultMailService.sendTest(testTo.trim()),
+    onSuccess: () => toast.success("Test email sent. Check the inbox (and spam) for the sample sheet."),
+    onError: fail("The test email could not be sent."),
+  });
+
+  const rows = queue.data ?? [];
+  const waiting = rows.filter((r) => r.status === "pending" || r.status === "sending").length;
+
+  return (
+    <div className="rounded-2xl border p-5">
+      <div className="flex gap-3">
+        <MailCheck className="mt-0.5 size-5" />
+        <div>
+          <p className="font-semibold">Delivery queue</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Set the examiner email on each paper in Examinations → Edit. Closing the examination queues the sheets and sends them.
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-4 flex flex-wrap items-center gap-2">
+        <Button className="rounded-xl" disabled={sendPending.isPending || waiting === 0} onClick={() => sendPending.mutate()}>
+          {sendPending.isPending ? "Sending…" : `Send pending now${waiting ? ` (${waiting})` : ""}`}
+        </Button>
+        <div className="flex flex-1 flex-wrap items-center gap-2">
+          <Input className="min-w-56 flex-1" type="email" placeholder="Send a test email to…" value={testTo} onChange={(e) => setTestTo(e.target.value)} />
+          <Button variant="outline" className="rounded-xl" disabled={!testTo.includes("@") || sendTest.isPending} onClick={() => sendTest.mutate()}>
+            {sendTest.isPending ? "Sending…" : "Send test"}
+          </Button>
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-2">
+        {queue.isPending ? <p className="text-sm text-muted-foreground">Loading…</p> : null}
+        {queue.isError ? <p role="alert" className="text-sm text-destructive">{queue.error instanceof Error ? queue.error.message : "Could not load the queue."}</p> : null}
+        {queue.isSuccess && !rows.length ? <p className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">No result sheets have been queued yet.</p> : null}
+        {rows.map((r) => (
+          <div key={r.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-secondary/50 px-3 py-2 text-sm">
+            <div className="min-w-0">
+              <p className="truncate"><b>{r.courseCode}</b> · {r.courseTitle} <span className="text-muted-foreground">({r.examTitle})</span></p>
+              <p className="truncate text-xs text-muted-foreground">{r.recipients}{r.lastError ? ` · ${r.lastError}` : ""}</p>
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_STYLE[r.status] ?? ""}`}>{r.status}</span>
+              {r.status === "failed" ? (
+                <Button size="sm" variant="outline" className="rounded-lg" disabled={retry.isPending} onClick={() => retry.mutate(r.id)}>Retry</Button>
+              ) : null}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function IdentityOverridesCard() {
+  const qc = useQueryClient();
+  const [term, setTerm] = useState("");
+  const [submitted, setSubmitted] = useState("");
+
+  const requests = useQuery({ queryKey: ["photo-requests"], queryFn: () => systemService.listPhotoRequests(), retry: false });
+  const found = useQuery({
+    queryKey: ["student-identity", submitted],
+    queryFn: () => systemService.findStudentIdentity(submitted),
+    enabled: submitted.trim().length >= 2,
+    retry: false,
+  });
+
+  const refresh = () => {
+    qc.invalidateQueries({ queryKey: ["photo-requests"] });
+    qc.invalidateQueries({ queryKey: ["student-identity"] });
+  };
+  const fail = (fallback: string) => (e: unknown) => toast.error(e instanceof Error ? e.message : fallback);
+
+  const decide = useMutation({
+    mutationFn: (input: { requestId: string; approve: boolean }) => systemService.decidePhotoRequest(input),
+    onSuccess: (_d, v) => { toast.success(v.approve ? "Approved. The student can upload one more photo." : "Request declined."); refresh(); },
+    onError: fail("Unable to record the decision."),
+  });
+  const grant = useMutation({
+    mutationFn: (studentId: string) => systemService.grantPhotoChange(studentId),
+    onSuccess: () => { toast.success("The student can upload one more photo."); refresh(); },
+    onError: fail("Unable to allow another upload."),
+  });
+  const release = useMutation({
+    mutationFn: (studentId: string) => systemService.releaseStudentDevice(studentId),
+    onSuccess: () => { toast.success("Device released. The student can sign in on another device."); refresh(); },
+    onError: fail("Unable to release the device."),
+  });
+
+  const pending = requests.data ?? [];
+
+  return (
+    <div className="rounded-2xl border p-5 xl:col-span-2">
+      <div className="flex gap-3">
+        <Fingerprint className="mt-0.5 size-5" />
+        <div>
+          <p className="font-semibold">Identity and device overrides</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            A student may change their identifier photo once. After that, approve another upload here. A registration number can be
+            active on one device at a time; release it here if a student's device died or was lost.
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-4 lg:grid-cols-2">
+        <div>
+          <p className="text-sm font-semibold">Photo change requests</p>
+          <div className="mt-2 grid gap-2">
+            {requests.isError ? <p role="alert" className="text-sm text-destructive">{requests.error instanceof Error ? requests.error.message : "Could not load requests."}</p> : null}
+            {requests.isSuccess && !pending.length ? <p className="rounded-xl border border-dashed p-3 text-sm text-muted-foreground">No requests waiting.</p> : null}
+            {pending.map((r) => (
+              <div key={r.requestId} className="rounded-xl bg-secondary/50 px-3 py-2 text-sm">
+                <p><b>{r.fullName}</b> · {r.matricNumber}</p>
+                {r.reason ? <p className="text-xs text-muted-foreground">{r.reason}</p> : null}
+                <div className="mt-2 flex gap-2">
+                  <Button size="sm" className="rounded-lg" disabled={decide.isPending} onClick={() => decide.mutate({ requestId: r.requestId, approve: true })}>Allow one more upload</Button>
+                  <Button size="sm" variant="outline" className="rounded-lg" disabled={decide.isPending} onClick={() => decide.mutate({ requestId: r.requestId, approve: false })}>Decline</Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <p className="text-sm font-semibold">Find a student</p>
+          <form className="mt-2 flex gap-2" onSubmit={(e) => { e.preventDefault(); setSubmitted(term.trim()); }}>
+            <Input value={term} onChange={(e) => setTerm(e.target.value)} placeholder="Matric number or name" />
+            <Button type="submit" variant="outline" className="rounded-xl" disabled={term.trim().length < 2}>Search</Button>
+          </form>
+          <div className="mt-2 grid gap-2">
+            {found.isFetching ? <p className="text-sm text-muted-foreground">Searching…</p> : null}
+            {found.isError ? <p role="alert" className="text-sm text-destructive">{found.error instanceof Error ? found.error.message : "Search failed."}</p> : null}
+            {found.isSuccess && !found.data.length ? <p className="rounded-xl border border-dashed p-3 text-sm text-muted-foreground">No matching student.</p> : null}
+            {(found.data ?? []).map((st) => (
+              <div key={st.studentId} className="rounded-xl bg-secondary/50 px-3 py-2 text-sm">
+                <p><b>{st.fullName}</b> · {st.matricNumber}</p>
+                <p className="text-xs text-muted-foreground">
+                  Photo: {st.hasPhoto ? `${st.photoUploads} upload${st.photoUploads === 1 ? "" : "s"}, ${st.photoCanUpload ? "can still change it" : "locked"}` : "not uploaded yet"}
+                  {" · "}
+                  Device: {st.deviceActive ? `active on ${st.deviceLabel ?? "a device"}` : st.deviceLabel ? `last on ${st.deviceLabel} (inactive)` : "none"}
+                </p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <Button size="sm" variant="outline" className="rounded-lg" disabled={!st.hasPhoto || st.photoCanUpload || grant.isPending} onClick={() => grant.mutate(st.studentId)}>Allow another photo upload</Button>
+                  <Button size="sm" variant="outline" className="rounded-lg" disabled={!st.deviceLabel && !st.deviceActive || release.isPending} onClick={() => release.mutate(st.studentId)}>Release device</Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
     </div>
   );

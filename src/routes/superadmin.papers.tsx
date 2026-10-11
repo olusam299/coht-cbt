@@ -7,6 +7,7 @@ import { RoleShell, SectionHeader } from "@/components/layout/RoleShell";
 import { SUPERADMIN_NAV } from "@/components/layout/nav-config";
 import { ServiceState } from "@/components/ServiceState";
 import { examManagementService } from "@/services/exam-management";
+import { resultMailService } from "@/services/result-mail";
 import { systemService } from "@/services";
 import { EXAM_CONTEXT_LABELS, type ExamContext } from "@/lib/exam-types";
 import { Button } from "@/components/ui/button";
@@ -100,9 +101,46 @@ function EditExamDialog({ exam, onClose }: { exam: any | null; onClose: () => vo
   const fail = (fallback: string) => (e: unknown) => toast.error(e instanceof Error ? e.message : fallback);
 
   const save = useMutation({
-    mutationFn: () => examManagementService.update({ examId: exam.id, title, durationMinutes: Number(duration), isActive: active, showInstantResults: instant }),
-    onSuccess: () => { toast.success("Examination updated."); refresh(); onClose(); },
+    mutationFn: async () => {
+      const closing = Boolean(exam.is_active) && !active;
+      await examManagementService.update({ examId: exam.id, title, durationMinutes: Number(duration), isActive: active, showInstantResults: instant });
+      // Closing an examination queues one result sheet per paper with an examiner email; send them now.
+      const mail = closing ? await resultMailService.sendPending(exam.id).catch((e: unknown) => ({ error: e instanceof Error ? e.message : "Could not send result sheets." })) : null;
+      return { closing, mail };
+    },
+    onSuccess: ({ closing, mail }) => {
+      toast.success("Examination updated.");
+      if (closing && mail) {
+        if ("error" in mail) toast.warning(`Result sheets are queued but were not sent yet: ${mail.error}`, { duration: 12000 });
+        else if (mail.processed > 0) toast.success(`Result sheets emailed for ${mail.sent} of ${mail.processed} paper${mail.processed === 1 ? "" : "s"}.`);
+      }
+      refresh(); onClose();
+    },
     onError: fail("Unable to update the examination."),
+  });
+  const emailNow = useMutation({
+    mutationFn: async () => {
+      const queued = await resultMailService.queueForExam(exam.id);
+      const sent = await resultMailService.sendPending(exam.id);
+      return { queued, sent };
+    },
+    onSuccess: ({ queued, sent }) => {
+      if (!queued && !sent.processed) toast.info("No paper of this examination has an examiner email set.");
+      else if (sent.failed) toast.warning(`${sent.failed} result sheet(s) failed: ${sent.failures[0]?.error ?? "see Settings"}`, { duration: 12000 });
+      else toast.success(`Result sheets emailed for ${sent.sent} paper${sent.sent === 1 ? "" : "s"}.`);
+    },
+    onError: fail("Unable to email the result sheets."),
+  });
+  const [emails, setEmails] = useState<Record<string, string>>({});
+  useEffect(() => {
+    if (exam) setEmails(Object.fromEntries(((exam.courses ?? []) as any[]).map((p) => [p.id, p.examiner_email ?? ""])));
+    // Re-seed only when a different examination is opened.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [exam?.id]);
+  const saveEmail = useMutation({
+    mutationFn: ({ paperId }: { paperId: string }) => resultMailService.setExaminerEmail(paperId, emails[paperId] ?? ""),
+    onSuccess: () => { toast.success("Examiner email saved."); refresh(); },
+    onError: fail("Unable to save the examiner email."),
   });
   const addPaper = useMutation({
     mutationFn: () => examManagementService.addPaper({ examId: exam.id, courseId }),
@@ -134,9 +172,15 @@ function EditExamDialog({ exam, onClose }: { exam: any | null; onClose: () => vo
       <div className="rounded-xl border p-3">
         <p className="text-sm font-semibold">Papers</p>
         <div className="mt-2 grid gap-1.5">
-          {papers.length ? papers.map((p) => <div key={p.id} className="flex items-center justify-between gap-2 rounded-lg bg-secondary/50 px-3 py-2 text-sm">
-            <span><b>{p.courses?.code ?? "Course"}</b> · {p.courses?.title ?? ""}</span>
-            <Button size="icon" variant="ghost" className="size-8 text-destructive" aria-label="Remove paper" disabled={live || removePaper.isPending} onClick={() => removePaper.mutate(p.id)}><Trash2 className="size-3.5" /></Button>
+          {papers.length ? papers.map((p) => <div key={p.id} className="grid gap-2 rounded-lg bg-secondary/50 px-3 py-2 text-sm">
+            <div className="flex items-center justify-between gap-2">
+              <span><b>{p.courses?.code ?? "Course"}</b> · {p.courses?.title ?? ""}</span>
+              <Button size="icon" variant="ghost" className="size-8 text-destructive" aria-label="Remove paper" disabled={live || removePaper.isPending} onClick={() => removePaper.mutate(p.id)}><Trash2 className="size-3.5" /></Button>
+            </div>
+            <div className="flex gap-2">
+              <Input aria-label={`Examiner email for ${p.courses?.code ?? "paper"}`} placeholder="Examiner email (separate several with commas)" value={emails[p.id] ?? ""} onChange={(e) => setEmails((prev) => ({ ...prev, [p.id]: e.target.value }))} />
+              <Button size="sm" variant="outline" disabled={saveEmail.isPending || (emails[p.id] ?? "") === (p.examiner_email ?? "")} onClick={() => saveEmail.mutate({ paperId: p.id })}>Save</Button>
+            </div>
           </div>) : <p className="text-sm text-muted-foreground">No papers attached.</p>}
         </div>
         <div className="mt-3 flex gap-2">
@@ -145,6 +189,6 @@ function EditExamDialog({ exam, onClose }: { exam: any | null; onClose: () => vo
         </div>
       </div>
     </div>
-    <DialogFooter><Button variant="outline" onClick={onClose}>Cancel</Button><Button disabled={save.isPending || invalid} onClick={() => save.mutate()}>{save.isPending ? "Saving…" : "Save changes"}</Button></DialogFooter>
+    <DialogFooter className="sm:justify-between"><Button variant="outline" disabled={emailNow.isPending} onClick={() => emailNow.mutate()}>{emailNow.isPending ? "Sending…" : "Email result sheets now"}</Button><div className="flex gap-2"><Button variant="outline" onClick={onClose}>Cancel</Button><Button disabled={save.isPending || invalid} onClick={() => save.mutate()}>{save.isPending ? "Saving…" : "Save changes"}</Button></div></DialogFooter>
   </DialogContent></Dialog>;
 }

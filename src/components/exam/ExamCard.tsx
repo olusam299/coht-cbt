@@ -42,6 +42,8 @@ export function ExamCard({ exam }: { exam: ExamSummary }) {
           : "We could not start this examination. Please try again.";
       setStartError(message);
       toast.error(message);
+      // The photo is required before a first paper: take the student to upload it.
+      if (/identifier photo/i.test(message)) void navigate({ to: "/onboarding" });
     } finally {
       setStarting(false);
     }

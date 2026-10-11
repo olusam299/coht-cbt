@@ -57,6 +57,8 @@ export interface ExamService {
     flagged: boolean;
   }): Promise<void>;
   /** Returns the refreshed server deadline; the client never owns the clock. */
+  /** Tells the server this browser is still the student's active device; throws DeviceConflictError if another one is. */
+  pingDevice(): Promise<void>;
   heartbeat(
     attemptId: string,
   ): Promise<{ expiresAt: string; serverNow: string; status: string }>;
@@ -128,6 +130,27 @@ export interface AdminAccountRow {
  * SuperAdmin-only privileged operations. Every one of these is authorised
  * server-side; the console only renders the affordance.
  */
+export interface StudentIdentityRow {
+  studentId: string;
+  matricNumber: string;
+  fullName: string;
+  photoUploads: number;
+  photoCanUpload: boolean;
+  hasPhoto: boolean;
+  deviceLabel: string | null;
+  deviceLastSeen: string | null;
+  deviceActive: boolean;
+}
+
+export interface PhotoRequestRow {
+  requestId: string;
+  studentId: string;
+  matricNumber: string;
+  fullName: string;
+  reason: string;
+  requestedAt: string;
+}
+
 export interface SystemService {
   listAdmins(): Promise<AdminAccountRow[]>;
   createAdmin(input: { fullName: string; email: string; password: string }): Promise<void>;
@@ -140,9 +163,15 @@ export interface SystemService {
   extendExamTimeBulk(input: { examId: string; examCourseId?: string | undefined; minutes: number; reason?: string | undefined }): Promise<number>;
   /** Submits papers whose server deadline has passed; returns how many were submitted. */
   sweepExpiredPapers(): Promise<number>;
-  authorizeResultMailing(input: { examId: string }): Promise<void>;
   addTimeExtension(input: { attemptId: string; minutes: number; note?: string }): Promise<void>;
-  grantPhotoChangeClearance(input: { studentId: string }): Promise<void>;
+  /** Finds students by matric number or name, with their photo and device status. */
+  findStudentIdentity(search: string): Promise<StudentIdentityRow[]>;
+  /** Allows one more photo upload for a student who has used their changes. */
+  grantPhotoChange(studentId: string): Promise<void>;
+  /** Frees a student's registration number so they can sign in on another device. */
+  releaseStudentDevice(studentId: string): Promise<void>;
+  listPhotoRequests(): Promise<PhotoRequestRow[]>;
+  decidePhotoRequest(input: { requestId: string; approve: boolean }): Promise<void>;
   listAdminPaperAssignments(): Promise<AdminPaperAssignmentRow[]>;
   assignAdminPaper(input: { adminId: string; examCourseId: string }): Promise<void>;
   unassignAdminPaper(assignmentId: string): Promise<void>;
