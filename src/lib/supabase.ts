@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { getDeviceId } from "./device";
+import { assertSecureApiUrl } from "./transport-security";
 
 const supabaseUrl = import.meta.env['VITE_SUPABASE_URL'];
 const supabaseAnonKey = import.meta.env['VITE_SUPABASE_ANON_KEY'];
@@ -11,6 +12,9 @@ if (!supabaseUrl) {
 if (!supabaseAnonKey) {
   throw new Error("Missing VITE_SUPABASE_ANON_KEY");
 }
+
+// OTPs and answers travel to this address: it must be https.
+assertSecureApiUrl(supabaseUrl, import.meta.env.DEV);
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   global: {

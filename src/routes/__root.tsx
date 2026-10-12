@@ -12,6 +12,7 @@ import { useEffect, type ReactNode } from "react";
 import appCss from "../styles.css?url";
 import { Toaster } from "@/components/ui/sonner";
 import { reportLovableError } from "../lib/lovable-error-reporting";
+import { httpsUpgradeUrl } from "../lib/transport-security";
 
 function NotFoundComponent() {
   return (
@@ -117,6 +118,12 @@ function RootShell({ children }: { children: ReactNode }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+
+  // A production page opened over plain http is sent to its https address.
+  useEffect(() => {
+    const target = httpsUpgradeUrl(window.location, import.meta.env.PROD);
+    if (target) window.location.replace(target);
+  }, []);
 
   return (
     <QueryClientProvider client={queryClient}>

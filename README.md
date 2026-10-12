@@ -38,3 +38,23 @@ npm run build
 ```
 
 Synced with Lovable; avoid rewriting pushed git history.
+
+## HTTPS
+
+Sign-in and exams must run over HTTPS. The app enforces this:
+
+- `VITE_SUPABASE_URL` must be an `https://` address (the app refuses to start otherwise).
+- A production page opened over plain `http://` is redirected to `https://`, and sign-in is withheld until it is.
+- Every response carries HSTS, `upgrade-insecure-requests`, `nosniff` and anti-framing headers.
+
+**Production:** deploy to Cloudflare (the build target) or publish from Lovable. Both serve HTTPS automatically.
+
+**Testing on a phone:** the dev server on a network address (`http://192.168.x.x:8081`) is plain http and shows a "not served over HTTPS" banner. For a real HTTPS test, open a tunnel to it:
+
+```powershell
+winget install Cloudflare.cloudflared
+npm run dev
+cloudflared tunnel --url http://localhost:8081
+```
+
+Open the `https://….trycloudflare.com` address it prints on the phone.

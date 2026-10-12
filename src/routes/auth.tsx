@@ -1,4 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { SecureConnectionGate } from "@/components/SecureConnectionGate";
 import { useState } from "react";
 import { Loader2, ShieldCheck, MonitorPlay, Shield } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -66,6 +67,7 @@ function AuthPage() {
   const isStaff = mode !== "student";
 
   return (
+    <SecureConnectionGate>
     <main className="grid min-h-screen lg:grid-cols-[1.1fr_1fr]">
       <section className="brand-gradient relative hidden flex-col justify-between p-12 text-primary-foreground lg:flex">
         <div className="flex items-center gap-3">
@@ -223,13 +225,11 @@ function AuthPage() {
               </span>
               <Separator className="flex-1" />
             </div>
-            <p className="mt-3 text-center text-xs leading-relaxed text-muted-foreground">
-              Admin and SuperAdmin access now requires a real authenticated staff session; role is resolved from the server-side profile.
-            </p>
           </div>
         </div>
       </section>
     </main>
+    </SecureConnectionGate>
   );
 }
 
