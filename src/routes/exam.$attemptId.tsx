@@ -17,6 +17,9 @@ import { useExamTimer } from "@/hooks/use-exam-timer";
 import { useExamSecurity } from "@/hooks/use-exam-security";
 import { authService, examService, profileService } from "@/services";
 import { DeviceConflictError } from "@/lib/device";
+import { isNetworkError } from "@/lib/network";
+import { AnswerQueue } from "@/lib/answer-queue";
+import type { NetworkState } from "@/components/exam/NetworkStatus";
 import type { AttemptResult, AttemptState } from "@/lib/exam-types";
 
 export const Route = createFileRoute("/exam/$attemptId")({
@@ -111,6 +114,12 @@ function ExamSession({
   const [saveError, setSaveError] = useState<string | null>(null);
   const [switching, setSwitching] = useState(false);
   const [deviceConflict, setDeviceConflict] = useState(false);
+  const [network, setNetwork] = useState<NetworkState>(
+    // (this file has a local `navigator` for the question grid, so use window.navigator)
+    typeof window !== "undefined" && window.navigator.onLine === false ? "offline" : "good",
+  );
+  const [pendingCount, setPendingCount] = useState(0);
+  const pendingKey = `coht.pending.${attempt.attemptId}`;
   const submittingRef = useRef(false);
   const serverPausedRef = useRef(attempt.status === "paused");
 
@@ -153,17 +162,41 @@ function ExamSession({
     [questions.length],
   );
 
+  const markNetwork = useCallback((ok: boolean) => {
+    setNetwork((prev) => (ok ? (prev === "offline" ? "recovering" : prev) : "offline"));
+  }, []);
+
+  // Answers chosen but not yet confirmed by the server. They are also kept in local storage so a
+  // refresh or a crashed tab during an outage does not lose them.
+  const queue = useMemo(
+    () =>
+      new AnswerQueue({
+        save: (questionId, optionIds) => examService.saveAnswer({ attemptId: attempt.attemptId, questionId, optionIds }),
+        isNetworkError,
+        onNetworkError: () => markNetwork(false),
+        onRejected: (_questionId, err) => setSaveError(err instanceof Error ? err.message : "An answer could not be saved."),
+        onChange: (entries) => {
+          setPendingCount(entries.length);
+          try {
+            if (entries.length) window.localStorage.setItem(pendingKey, JSON.stringify(entries));
+            else window.localStorage.removeItem(pendingKey);
+          } catch {
+            // storage can be unavailable; the in-memory queue still works
+          }
+        },
+      }),
+    [attempt.attemptId, markNetwork, pendingKey],
+  );
+  const flushPending = useCallback(() => queue.flush(), [queue]);
+
   const select = useCallback(
     (optionIds: string[]) => {
       if (!question) return;
       setAnswers((prev) => ({ ...prev, [question.id]: optionIds }));
-      void examService
-        .saveAnswer({ attemptId: attempt.attemptId, questionId: question.id, optionIds })
-        .catch((err: unknown) =>
-          setSaveError(err instanceof Error ? err.message : "Answer not saved."),
-        );
+      queue.set(question.id, optionIds);
+      void queue.flush();
     },
-    [attempt.attemptId, question],
+    [question, queue],
   );
 
   const toggleFlag = useCallback(() => {
@@ -189,16 +222,37 @@ function ExamSession({
     submittingRef.current = true;
     setSubmitting(true);
     try {
+      // Every chosen answer must reach the server before the paper is submitted.
+      const synced = await flushPending();
+      if (!synced) {
+        setConfirmOpen(false);
+        setSaveError(
+          `No connection: ${queue.size} answer${queue.size === 1 ? " is" : "s are"} saved on this device but not yet on the server. Stay on this page; your paper will be submitted once they sync.`,
+        );
+        return;
+      }
       const result = await examService.submitAttempt(attempt.attemptId);
+      try {
+        window.localStorage.removeItem(pendingKey);
+      } catch {
+        // ignore
+      }
       setConfirmOpen(false);
       setSubmission(result);
+      setSaveError(null);
     } catch (err) {
-      setSaveError(err instanceof Error ? err.message : "Submission failed.");
+      setConfirmOpen(false);
+      if (isNetworkError(err)) {
+        markNetwork(false);
+        setSaveError("No connection. Your answers are safe on this device; submit again when you are back online.");
+      } else {
+        setSaveError(err instanceof Error ? err.message : "Submission failed.");
+      }
     } finally {
       submittingRef.current = false;
       setSubmitting(false);
     }
-  }, [attempt.attemptId, security.paused]);
+  }, [attempt.attemptId, security.paused, flushPending, queue, markNetwork, pendingKey]);
 
   const { pause: pauseExam, resume: resumeExam } = security;
 
@@ -207,12 +261,15 @@ function ExamSession({
   useEffect(() => {
     if (submission) return;
     let cancelled = false;
+    let tick = 0;
     const poll = async () => {
       try {
         // Another device taking over this registration number ends this sitting on this device.
-        await examService.pingDevice();
+        if (tick++ % 3 === 0) await examService.pingDevice();
         const beat = await examService.heartbeat(attempt.attemptId);
         if (cancelled) return;
+        markNetwork(true);
+        if (queue.size > 0) void flushPending();
         setDeadline({ expiresAt: beat.expiresAt, serverNow: beat.serverNow });
         if (beat.status === "paused") {
           serverPausedRef.current = true;
@@ -239,20 +296,59 @@ function ExamSession({
           if (!cancelled) setDeviceConflict(true);
           return;
         }
-        // Transient network error: keep the last known deadline and try again.
+        if (!cancelled && isNetworkError(error)) markNetwork(false);
+        // Keep the last known deadline and try again on the next tick.
       }
     };
-    const id = window.setInterval(() => void poll(), 15_000);
+    const id = window.setInterval(() => void poll(), 5_000);
     const onVisible = () => {
       if (document.visibilityState === "visible") void poll();
     };
+    const onOffline = () => markNetwork(false);
+    const onOnline = () => void poll();
     document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("offline", onOffline);
+    window.addEventListener("online", onOnline);
     return () => {
       cancelled = true;
       window.clearInterval(id);
       document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("offline", onOffline);
+      window.removeEventListener("online", onOnline);
     };
-  }, [attempt.attemptId, attempt.questions.length, submission, pauseExam, resumeExam]);
+  }, [attempt.attemptId, attempt.questions.length, submission, pauseExam, resumeExam, markNetwork, flushPending, queue]);
+
+  // Restore answers that were chosen but never reached the server (outage, refresh or crashed tab).
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(pendingKey);
+      if (!raw) return;
+      const stored = JSON.parse(raw) as [string, string[]][];
+      const valid = stored.filter(([id]) => attempt.questions.some((q) => q.id === id));
+      if (!valid.length) return;
+      queue.restore(valid);
+      setAnswers((prev) => ({ ...prev, ...Object.fromEntries(valid) }));
+      void queue.flush();
+    } catch {
+      // unreadable data is ignored
+    }
+    // run once per attempt
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [attempt.attemptId]);
+
+  // Back online after an outage: catch up, then settle to "online".
+  useEffect(() => {
+    if (network !== "recovering") return;
+    let cancelled = false;
+    void flushPending().then((done) => {
+      if (!done || cancelled) return;
+      setSaveError(null);
+      window.setTimeout(() => setNetwork((n) => (n === "recovering" ? "good" : n)), 2500);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [network, flushPending]);
 
   // Time is up: submit what has been saved. Retries until the server accepts it.
   useEffect(() => {
@@ -417,6 +513,8 @@ function ExamSession({
         courseCode={attempt.exam.courseCode}
         context={attempt.exam.context}
         clock={clock}
+        network={network}
+        pendingAnswers={pendingCount}
         answered={answered}
         total={questions.length}
         compact={isPhone}

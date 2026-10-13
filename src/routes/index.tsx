@@ -89,9 +89,6 @@ function Dashboard() {
 
         <section className="mt-8">
           <h2 className="font-display text-xl font-bold sm:text-2xl">Your exams</h2>
-          <p className="mt-1 max-w-prose text-sm text-muted-foreground">
-            Everything scheduled for you, across all three examination contexts.
-          </p>
         </section>
 
         <Tabs

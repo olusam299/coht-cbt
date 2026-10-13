@@ -5,11 +5,15 @@ import { StudentAvatar } from "@/components/StudentAvatar";
 import type { Gender } from "@/lib/student-profile";
 import { ContextBadge } from "./ContextBadge";
 import { StrikeIndicator } from "./StrikeIndicator";
+import { NetworkStatus, type NetworkState } from "./NetworkStatus";
 import type { ExamContext } from "@/lib/exam-types";
 import type { ExamClock } from "@/hooks/use-exam-timer";
 import { cn } from "@/lib/utils";
 
 export interface ExamTopBarProps {
+  /** Connection state and how many answers are waiting to reach the server. */
+  network?: NetworkState;
+  pendingAnswers?: number;
   title: string;
   courseCode: string;
   context: ExamContext;
@@ -34,6 +38,8 @@ export function ExamTopBar({
   courseCode,
   context,
   clock,
+  network = "good",
+  pendingAnswers = 0,
   answered,
   total,
   onOpenNavigator,
@@ -75,6 +81,7 @@ export function ExamTopBar({
           </div>
 
           <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+            <NetworkStatus state={network} pending={pendingAnswers} compact={compact} />
             <div
               role="timer"
               aria-live="off"

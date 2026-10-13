@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { SecureConnectionGate } from "@/components/SecureConnectionGate";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Loader2, ShieldCheck, MonitorPlay, Shield } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -40,6 +40,18 @@ function AuthPage() {
   const [status, setStatus] = useState<"idle" | "pending">("idle");
   const [error, setError] = useState<string | null>(null);
 
+  // Suggest the login last used on this device (the OTP is never stored).
+  const [lastMatric, setLastMatric] = useState<string | null>(null);
+  const [lastEmail, setLastEmail] = useState<string | null>(null);
+  useEffect(() => {
+    try {
+      setLastMatric(window.localStorage.getItem("coht.last.matric"));
+      setLastEmail(window.localStorage.getItem(`coht.last.email.${mode}`));
+    } catch {
+      // storage unavailable: no suggestion
+    }
+  }, [mode]);
+
   const onSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     setStatus("pending");
@@ -48,6 +60,11 @@ function AuthPage() {
     try {
       if (mode === "student") {
         await authService.signIn({ matricNumber, password });
+        try {
+          window.localStorage.setItem("coht.last.matric", matricNumber.trim());
+        } catch {
+          // ignore
+        }
         navigate({ to: "/", replace: true });
       } else {
         const role = await authService.signInStaff({
@@ -55,6 +72,11 @@ function AuthPage() {
           password,
           expectedRole: mode,
         });
+        try {
+          window.localStorage.setItem(`coht.last.email.${mode}`, email.trim().toLowerCase());
+        } catch {
+          // ignore
+        }
         navigate({ to: roleHome(role), replace: true });
       }
     } catch (err) {
@@ -158,6 +180,11 @@ function AuthPage() {
                   className="tap-target rounded-xl"
                   placeholder="name@college.edu.ng"
                 />
+                {lastEmail && email.trim().toLowerCase() !== lastEmail ? (
+                  <button type="button" className="justify-self-start text-xs text-primary underline-offset-2 hover:underline" onClick={() => setEmail(lastEmail)}>
+                    Use last login: {lastEmail}
+                  </button>
+                ) : null}
               </div>
             ) : (
               <div className="grid gap-2">
@@ -173,19 +200,27 @@ function AuthPage() {
                   className="tap-target rounded-xl"
                   placeholder="e.g. COH/2024/00123"
                 />
+                {lastMatric && matricNumber.trim() !== lastMatric ? (
+                  <button type="button" className="justify-self-start text-xs text-primary underline-offset-2 hover:underline" onClick={() => setMatricNumber(lastMatric)}>
+                    Use last login: {lastMatric}
+                  </button>
+                ) : null}
               </div>
             )}
 
             <div className="grid gap-2">
-              <Label htmlFor="password">Password</Label>
+              <Label htmlFor="password">{isStaff ? "Password" : "OTP"}</Label>
               <Input
                 id="password"
                 name="password"
                 type="password"
                 autoComplete="current-password"
+                autoCapitalize={isStaff ? "off" : "characters"}
+                autoCorrect="off"
+                spellCheck={false}
                 required
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={(e) => setPassword(isStaff ? e.target.value : e.target.value.toUpperCase())}
                 className="tap-target rounded-xl"
               />
             </div>

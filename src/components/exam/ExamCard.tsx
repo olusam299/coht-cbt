@@ -11,7 +11,7 @@ const statusCopy: Record<ExamSummary["status"], string> = {
   available: "Available now",
   scheduled: "Scheduled",
   closed: "Closed",
-  completed: "Completed",
+  completed: "Submitted",
 };
 
 export function ExamCard({ exam }: { exam: ExamSummary }) {

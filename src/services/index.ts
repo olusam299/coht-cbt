@@ -47,14 +47,22 @@ function firstRow<T>(data: T[] | null | undefined, error: { message: string } | 
 }
 
 async function currentUserId(): Promise<string> {
-  const { data, error } = await supabase.auth.getUser();
+  // The session is read locally, so these checks keep working during a connection outage.
+  // The database enforces every permission regardless of what the browser believes.
+  const { data, error } = await supabase.auth.getSession();
   if (error) throw new Error(error.message);
-  if (!data.user) throw new Error("Authentication required.");
-  return data.user.id;
+  if (!data.session) throw new Error("Authentication required.");
+  return data.session.user.id;
 }
+
+let profileCache: { userId: string; at: number; value: any } | null = null;
+const PROFILE_CACHE_MS = 60_000;
 
 async function currentProfile() {
   const userId = await currentUserId();
+  if (profileCache && profileCache.userId === userId && Date.now() - profileCache.at < PROFILE_CACHE_MS) {
+    return profileCache.value;
+  }
   const { data, error } = await supabase
     .from("profiles")
     .select("id, role, student_id, display_name, is_active")
@@ -63,6 +71,7 @@ async function currentProfile() {
 
   if (error) throw new Error(error.message);
   if (!data || !data.is_active) throw new Error("Your account is inactive.");
+  profileCache = { userId, at: Date.now(), value: data };
   return data;
 }
 
@@ -86,6 +95,7 @@ function toStudent(row: any): Student {
 
 export const authService: AuthService = {
   async signIn({ matricNumber, password }) {
+    profileCache = null;
     const { data: email, error: mappingError } = await supabase.rpc(
       "student_auth_email",
       { p_reg_no: matricNumber.trim() },
@@ -96,7 +106,8 @@ export const authService: AuthService = {
 
     const { data, error } = await supabase.auth.signInWithPassword({
       email,
-      password,
+      // OTPs are always capital letters and digits, so accept them however they were typed.
+      password: password.trim().toUpperCase(),
     });
 
     if (error) throw new Error(error.message);
@@ -166,6 +177,7 @@ export const authService: AuthService = {
     } catch {
       // best effort
     }
+    profileCache = null;
     const { error } = await supabase.auth.signOut();
     if (error) throw new Error(error.message);
   },
@@ -317,7 +329,7 @@ async function activePaperId(attemptId: string): Promise<string> {
 
 export const examService: ExamService = {
   async listExams() {
-    await requireRole(["student", "admin", "superadmin"]);
+    const me = await requireRole(["student", "admin", "superadmin"]);
 
     /*
      * Return exam definitions and their course allocations. The UI-specific
@@ -343,7 +355,7 @@ export const examService: ExamService = {
 
     if (error) throw new Error(error.message);
 
-    return (data ?? []).map((exam: any) => ({
+    const list = (data ?? []).map((exam: any) => ({
       id: exam.id,
       title: exam.title,
       courseCode: exam.exam_courses?.[0]?.courses?.code ?? "",
@@ -355,7 +367,22 @@ export const examService: ExamService = {
       opensAt: null,
       closesAt: null,
       status: "available",
-    })) as any;
+    })) as any[];
+
+    // A student sees their own papers, and an exam whose papers are all submitted shows as Submitted.
+    if (me.role === "student") {
+      await Promise.all(
+        list.map(async (exam) => {
+          const { data: papers, error: papersError } = await supabase.rpc("list_my_exam_papers", { p_exam_id: exam.id });
+          const rows = (papers ?? []) as { course_code: string; paper_status: string }[];
+          if (papersError || !rows.length) return;
+          exam.courseCode = rows.map((p) => p.course_code).join(" · ");
+          if (rows.every((p) => p.paper_status === "submitted")) exam.status = "completed";
+        }),
+      );
+    }
+
+    return list;
   },
 
   async startAttempt(examId) {

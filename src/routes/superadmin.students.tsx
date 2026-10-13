@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
-import { ChevronRight, Download, X } from "lucide-react";
+import { ChevronRight, Download, Plus, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,6 +15,7 @@ import { resultsService } from "@/services";
 import { type ExportFormat } from "@/lib/departments";
 import { deliverExport } from "@/lib/export-file";
 import { supabase } from "@/lib/supabase";
+import { AddCoursesDialog, AddStudentDialog } from "@/components/superadmin/StudentRegistryDialogs";
 
 export const Route = createFileRoute("/superadmin/students")({
   head: () => ({ meta: [{ title: "Registered Students | COHT CBT SuperAdmin" }] }),
@@ -25,6 +26,9 @@ function SuperAdminStudents() {
   const [department, setDepartment] = useState(ALL_DEPARTMENTS);
   const [term, setTerm] = useState("");
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
+  const qc = useQueryClient();
+  const [addStudentOpen, setAddStudentOpen] = useState(false);
+  const [addCoursesFor, setAddCoursesFor] = useState<{ id: string; name: string } | null>(null);
   const departments = useQuery({
     queryKey: ["departments", "students-page"],
     queryFn: async () => {
@@ -57,6 +61,7 @@ function SuperAdminStudents() {
     <SectionHeader title="Register" actions={<>
       <DepartmentFilter value={department} onChange={setDepartment} />
       <Input value={term} onChange={(event) => setTerm(event.target.value)} placeholder="Search name or matric" aria-label="Search students" className="tap-target w-full rounded-xl sm:w-60" />
+      <Button className="tap-target rounded-xl" onClick={() => setAddStudentOpen(true)}><Plus className="size-4" aria-hidden /> Add student</Button>
       <Button variant="outline" className="tap-target rounded-xl" onClick={() => exportRegister("csv")}><Download className="size-4" aria-hidden /> CSV (Excel)</Button>
       <Button variant="outline" className="tap-target rounded-xl" onClick={() => exportRegister("pdf")}><Download className="size-4" aria-hidden /> Print / PDF</Button>
     </>} />
@@ -72,11 +77,21 @@ function SuperAdminStudents() {
         <DialogHeader><DialogTitle>Complete student record</DialogTitle></DialogHeader>
         {detail.isPending ? <p className="py-8 text-sm text-muted-foreground">Loading student record…</p> : detail.isError ? <p className="py-8 text-sm text-destructive">{detail.error instanceof Error ? detail.error.message : "Unable to load student record."}</p> : detail.data ? <div className="grid gap-5">
           <section className="rounded-2xl border p-4"><div className="flex items-start gap-4"><StudentAvatar name={detail.data.fullName} photoUrl={null} gender={null} size="xl" /><div className="min-w-0"><h3 className="text-lg font-bold">{detail.data.fullName}</h3><p className="text-sm text-muted-foreground">{detail.data.matricNumber}</p><div className="mt-3 flex flex-wrap gap-2 text-xs"><span className="rounded-full bg-secondary px-3 py-1">{detail.data.departmentCode ?? "—"} · {detail.data.departmentName ?? "Unassigned"}</span><span className="rounded-full bg-secondary px-3 py-1">{detail.data.programmeCode ?? "—"} · {detail.data.programmeName ?? "Unassigned"}</span><span className="rounded-full bg-secondary px-3 py-1">Level {detail.data.level ?? "—"}</span><span className="rounded-full bg-secondary px-3 py-1">{detail.data.isActive ? "Active" : "Inactive"}</span></div></div></div></section>
-          <section><div className="mb-3 flex items-center justify-between"><div><h3 className="font-semibold">Registered courses</h3><p className="text-xs text-muted-foreground">Every registration recorded for this student, including resits/carryovers.</p></div><span className="rounded-full bg-secondary px-3 py-1 text-xs font-semibold">{detail.data.registrations.length} total</span></div>
+          <section><div className="mb-3 flex items-center justify-between"><div><h3 className="font-semibold">Registered courses</h3><p className="text-xs text-muted-foreground">Every registration recorded for this student, including resits/carryovers.</p></div><div className="flex items-center gap-2"><Button size="sm" className="rounded-lg" onClick={() => setAddCoursesFor({ id: detail.data!.studentId, name: detail.data!.fullName })}><Plus className="size-3.5" aria-hidden /> Add courses</Button><span className="rounded-full bg-secondary px-3 py-1 text-xs font-semibold">{detail.data.registrations.length} total</span></div></div>
             {detail.data.registrations.length ? <div className="overflow-x-auto rounded-2xl border"><table className="w-full text-sm"><thead className="bg-secondary/50 text-left text-xs"><tr><th className="p-3">Course</th><th className="p-3">Session</th><th className="p-3">Type</th><th className="p-3">Status</th></tr></thead><tbody>{detail.data.registrations.map((r) => <tr key={r.registration_id} className="border-t"><td className="p-3"><b>{r.course_code}</b><div className="text-xs text-muted-foreground">{r.course_title} · {r.credit_units ?? "—"} CU</div></td><td className="p-3">{r.academic_session_name ?? "—"}</td><td className="p-3">{r.registration_type ?? "—"}</td><td className="p-3">{r.is_active ? "Active" : "Inactive"}</td></tr>)}</tbody></table></div> : <div className="rounded-2xl border border-dashed p-6 text-sm text-muted-foreground">No course registrations are recorded for this student.</div>}
           </section>
         </div> : null}
       </DialogContent>
     </Dialog>
+    <AddStudentDialog
+      open={addStudentOpen}
+      onClose={() => setAddStudentOpen(false)}
+      onCreated={(student) => { setAddStudentOpen(false); qc.invalidateQueries({ queryKey: ["students"] }); setAddCoursesFor(student); }}
+    />
+    <AddCoursesDialog
+      student={addCoursesFor}
+      onClose={() => setAddCoursesFor(null)}
+      onSaved={() => { qc.invalidateQueries({ queryKey: ["student-detail"] }); qc.invalidateQueries({ queryKey: ["students"] }); }}
+    />
   </RoleShell>;
 }
