@@ -42,21 +42,41 @@ export function connectionState(isSecureContext: boolean, isProd: boolean): Conn
   return isProd ? "insecure-prod" : "insecure-dev";
 }
 
+/** Safe on any connection. */
 export const SECURITY_HEADERS: Record<string, string> = {
-  // Browsers ignore HSTS on http, so it only takes effect once the site is served over https.
-  "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
   "X-Content-Type-Options": "nosniff",
   "Referrer-Policy": "strict-origin-when-cross-origin",
   "X-Frame-Options": "SAMEORIGIN",
   "Permissions-Policy": "camera=(self), microphone=(), geolocation=()",
-  // Upgrades any stray http sub-resource to https and blocks framing by other sites.
+  "Content-Security-Policy": "frame-ancestors 'self'",
+};
+
+/**
+ * Only meaningful, and only safe, on an https connection. On a plain-http page,
+ * upgrade-insecure-requests makes the browser fetch every style and script over https from a
+ * server that is not listening there, which breaks the page (for example the dev server opened
+ * by its network address on a phone).
+ */
+export const HTTPS_ONLY_HEADERS: Record<string, string> = {
+  "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
   "Content-Security-Policy": "upgrade-insecure-requests; frame-ancestors 'self'",
 };
 
-export function withSecurityHeaders(response: Response): Response {
+/** True when the visitor reached us over https (directly, or through a proxy or tunnel that says so). */
+export function requestIsHttps(request: Request): boolean {
+  try {
+    if (new URL(request.url).protocol === "https:") return true;
+  } catch {
+    // fall through to the proxy header
+  }
+  return (request.headers.get("x-forwarded-proto") ?? "").split(",")[0]?.trim().toLowerCase() === "https";
+}
+
+export function withSecurityHeaders(response: Response, isHttps: boolean): Response {
   // Upgrade (WebSocket) responses cannot be re-wrapped.
   if (response.status === 101) return response;
   const headers = new Headers(response.headers);
   for (const [name, value] of Object.entries(SECURITY_HEADERS)) headers.set(name, value);
+  if (isHttps) for (const [name, value] of Object.entries(HTTPS_ONLY_HEADERS)) headers.set(name, value);
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }
