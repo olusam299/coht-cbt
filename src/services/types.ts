@@ -241,6 +241,7 @@ export interface ResultRow {
   total: number;
   submittedAt: string | null;
   status: string;
+  archived: boolean;
 }
 
 export interface StudentRegistrationDetail {
@@ -284,7 +285,7 @@ export interface RegisteredStudentRow {
 
 /** SuperAdmin-only. Results are never exposed to the Admin role. */
 export interface ResultsService {
-  listResults(filter: { departmentId?: string; examId?: string }): Promise<ResultRow[]>;
+  listResults(filter: { departmentId?: string; examId?: string; includeArchived?: boolean }): Promise<ResultRow[]>;
   listRegisteredStudents(filter: { departmentId?: string }): Promise<RegisteredStudentRow[]>;
   getStudentDetail(studentId: string): Promise<RegisteredStudentDetail>;
   /** Builds the file in the browser from live registry/results data. */
@@ -295,6 +296,7 @@ export interface ResultsService {
   exportResults(input: {
     departmentId?: string;
     examId?: string;
+    includeArchived?: boolean;
     format: ExportFormat;
   }): Promise<ExportResult>;
 }

@@ -1,4 +1,5 @@
 import { Link, useRouterState } from "@tanstack/react-router";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { Menu, LogOut } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
@@ -127,7 +128,10 @@ export function RoleShell({
                 <p className="truncate text-xs text-muted-foreground">{subtitle}</p>
               ) : null}
             </div>
-            {actions ? <div className="flex shrink-0 items-center gap-2">{actions}</div> : null}
+            <div className="flex shrink-0 items-center gap-2">
+              <ThemeToggle />
+              {actions}
+            </div>
           </div>
         </header>
 

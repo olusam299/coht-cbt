@@ -1,5 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 export function PortalHeader({ actions }: { actions?: ReactNode }) {
   return (
@@ -18,7 +19,10 @@ export function PortalHeader({ actions }: { actions?: ReactNode }) {
             <span className="block text-xs text-muted-foreground">CBT Portal</span>
           </span>
         </Link>
-        {actions}
+        <div className="flex shrink-0 items-center gap-2">
+          <ThemeToggle />
+          {actions}
+        </div>
       </div>
     </header>
   );

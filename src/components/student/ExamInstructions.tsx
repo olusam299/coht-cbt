@@ -1,4 +1,4 @@
-import { AlertTriangle, Clock, MonitorSmartphone, ShieldAlert } from "lucide-react";
+import { AlertTriangle, Clock, MonitorSmartphone, ShieldAlert, Moon } from "lucide-react";
 
 const POINTS = [
   {
@@ -16,6 +16,10 @@ const POINTS = [
   {
     icon: AlertTriangle,
     text: "Answers are saved as you go. Submit only when you are done; the confirmation screen shows what is still unanswered.",
+  },
+  {
+    icon: Moon,
+    text: "Prefer a darker screen? Use the Dark mode button at the top of the screen to switch the colour scheme, and tap it again to go back to light.",
   },
 ];
 

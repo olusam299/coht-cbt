@@ -4,6 +4,8 @@ import { useState } from "react";
 import { Download } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { RoleShell, SectionHeader } from "@/components/layout/RoleShell";
 import { SUPERADMIN_NAV } from "@/components/layout/nav-config";
 import { ALL_DEPARTMENTS, DepartmentFilter } from "@/components/admin/DepartmentFilter";
@@ -32,10 +34,14 @@ export const Route = createFileRoute("/superadmin/results")({
 
 function SuperAdminResults() {
   const [department, setDepartment] = useState(ALL_DEPARTMENTS);
-  const scope = department === ALL_DEPARTMENTS ? {} : { departmentId: department };
+  const [showArchived, setShowArchived] = useState(false);
+  const scope = {
+    ...(department === ALL_DEPARTMENTS ? {} : { departmentId: department }),
+    ...(showArchived ? { includeArchived: true } : {}),
+  };
 
   const results = useQuery({
-    queryKey: ["results", department],
+    queryKey: ["results", department, showArchived],
     queryFn: () => resultsService.listResults(scope),
     retry: false,
   });
@@ -60,6 +66,10 @@ function SuperAdminResults() {
         actions={
           <>
             <DepartmentFilter value={department} onChange={setDepartment} />
+            <div className="flex items-center gap-2 rounded-xl border px-3 py-2">
+              <Switch id="show-archived" checked={showArchived} onCheckedChange={setShowArchived} />
+              <Label htmlFor="show-archived" className="text-sm">Show archived</Label>
+            </div>
             <Button variant="outline" className="tap-target rounded-xl" onClick={() => exportResults("csv")}>
               <Download className="size-4" aria-hidden /> CSV (Excel)
             </Button>
@@ -96,7 +106,7 @@ function SuperAdminResults() {
                     <td className="p-3">{row.courseCode}</td>
                     <td className="p-3 tabular-nums">{row.answered}/{row.total}</td>
                     <td className="p-3 tabular-nums">{row.scorePercent ?? "—"}</td>
-                    <td className="p-3">{row.status}</td>
+                    <td className="p-3">{row.status}{row.archived ? <span className="ml-2 rounded-full bg-secondary px-2 py-0.5 text-xs text-muted-foreground">Archived</span> : null}</td>
                   </tr>
                 ))}
               </tbody>

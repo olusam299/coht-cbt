@@ -11,7 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { RoleShell, SectionHeader, StatTile } from "@/components/layout/RoleShell";
 import { SUPERADMIN_NAV } from "@/components/layout/nav-config";
 import { dataManagementService } from "@/services/data-management";
-import { StudentOtpPanel } from "@/components/superadmin/StudentOtpPanel";
+import { ResultsDataCard } from "@/components/superadmin/ResultsDataCard";
 import type { ImportEntity, ImportIssue, ImportValidationResult } from "@/services/data-management";
 
 export const Route = createFileRoute("/superadmin/data")({
@@ -201,7 +201,7 @@ function SuperAdminData() {
   }
   return <RoleShell role="superadmin" items={SUPERADMIN_NAV} title="Data Management" subtitle="Controlled import of the examination data foundation">
     <SectionHeader title="Institution data" description="Upload, validate, review and explicitly confirm changes. No import is silently accepted." />
-    <StudentOtpPanel />
+    <ResultsDataCard />
     <Card className="surface-card rounded-2xl border-destructive/20 p-5">
       <div>
         <p className="font-display font-bold">Clear selected data</p>

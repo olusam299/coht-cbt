@@ -1,5 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { SecureConnectionGate } from "@/components/SecureConnectionGate";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { useEffect, useState } from "react";
 import { Loader2, ShieldCheck, MonitorPlay, Shield } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -116,7 +117,10 @@ function AuthPage() {
         </p>
       </section>
 
-      <section className="flex items-center justify-center px-5 py-12 sm:px-10">
+      <section className="relative flex items-center justify-center px-5 py-12 sm:px-10">
+        <div className="absolute right-4 top-4 sm:right-6 sm:top-6">
+          <ThemeToggle />
+        </div>
         <div className="w-full max-w-sm animate-rise">
           <h1 className="font-display text-2xl font-bold">Sign in</h1>
           <p className="mt-2 text-sm text-muted-foreground">

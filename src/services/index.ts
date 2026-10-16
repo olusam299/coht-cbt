@@ -1003,12 +1003,14 @@ export const resultsService: ResultsService = {
         percentage,
         status,
         scored_at,
+        archived_at,
         students(reg_no, full_name, level, programmes(name, department_id)),
         exams(title, exam_courses(courses(code)))
       `)
       .order("scored_at", { ascending: false });
 
     if (filter.examId) query = query.eq("exam_id", filter.examId);
+    if (!filter.includeArchived) query = query.is("archived_at", null);
 
     const { data, error } = await query;
     if (error) throw new Error(error.message);
@@ -1032,6 +1034,7 @@ export const resultsService: ResultsService = {
         total: Number(row.total_questions ?? 0),
         submittedAt: row.scored_at,
         status: row.status,
+        archived: Boolean(row.archived_at),
       }));
   },
 
@@ -1098,12 +1101,13 @@ export const resultsService: ResultsService = {
       : printableExport("Student register", columns, students);
   },
 
-  async exportResults({ departmentId, examId, format }) {
+  async exportResults({ departmentId, examId, includeArchived, format }) {
     await requireRole(["superadmin"]);
 
     const results = await resultsService.listResults({
       ...(departmentId ? { departmentId } : {}),
       ...(examId ? { examId } : {}),
+      ...(includeArchived ? { includeArchived } : {}),
     });
 
     type Row = (typeof results)[number];
@@ -1115,7 +1119,7 @@ export const resultsService: ResultsService = {
       { header: "Score (%)", value: (r) => (r.scorePercent == null ? "" : r.scorePercent.toFixed(1)) },
       { header: "Answered", value: (r) => r.answered },
       { header: "Questions", value: (r) => r.total },
-      { header: "Status", value: (r) => r.status },
+      { header: "Status", value: (r) => (r.archived ? `${r.status} (archived)` : r.status) },
       { header: "Submitted at", value: (r) => r.submittedAt },
     ];
 

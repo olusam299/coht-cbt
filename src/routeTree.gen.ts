@@ -21,6 +21,7 @@ import { Route as SuperadminAcademicRouteImport } from './routes/superadmin.acad
 import { Route as SuperadminAdminsRouteImport } from './routes/superadmin.admins'
 import { Route as SuperadminDataRouteImport } from './routes/superadmin.data'
 import { Route as SuperadminMonitorRouteImport } from './routes/superadmin.monitor'
+import { Route as SuperadminOtpRouteImport } from './routes/superadmin.otp'
 import { Route as SuperadminPapersRouteImport } from './routes/superadmin.papers'
 import { Route as SuperadminQuestionBankRouteImport } from './routes/superadmin.question-bank'
 import { Route as SuperadminResultsRouteImport } from './routes/superadmin.results'
@@ -88,6 +89,11 @@ const SuperadminMonitorRoute = SuperadminMonitorRouteImport.update({
   path: '/superadmin/monitor',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SuperadminOtpRoute = SuperadminOtpRouteImport.update({
+  id: '/superadmin/otp',
+  path: '/superadmin/otp',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SuperadminPapersRoute = SuperadminPapersRouteImport.update({
   id: '/superadmin/papers',
   path: '/superadmin/papers',
@@ -130,6 +136,7 @@ export interface FileRoutesByFullPath {
   '/superadmin/admins': typeof SuperadminAdminsRoute
   '/superadmin/data': typeof SuperadminDataRoute
   '/superadmin/monitor': typeof SuperadminMonitorRoute
+  '/superadmin/otp': typeof SuperadminOtpRoute
   '/superadmin/papers': typeof SuperadminPapersRoute
   '/superadmin/question-bank': typeof SuperadminQuestionBankRoute
   '/superadmin/results': typeof SuperadminResultsRoute
@@ -150,6 +157,7 @@ export interface FileRoutesByTo {
   '/superadmin/admins': typeof SuperadminAdminsRoute
   '/superadmin/data': typeof SuperadminDataRoute
   '/superadmin/monitor': typeof SuperadminMonitorRoute
+  '/superadmin/otp': typeof SuperadminOtpRoute
   '/superadmin/papers': typeof SuperadminPapersRoute
   '/superadmin/question-bank': typeof SuperadminQuestionBankRoute
   '/superadmin/results': typeof SuperadminResultsRoute
@@ -171,6 +179,7 @@ export interface FileRoutesById {
   '/superadmin/admins': typeof SuperadminAdminsRoute
   '/superadmin/data': typeof SuperadminDataRoute
   '/superadmin/monitor': typeof SuperadminMonitorRoute
+  '/superadmin/otp': typeof SuperadminOtpRoute
   '/superadmin/papers': typeof SuperadminPapersRoute
   '/superadmin/question-bank': typeof SuperadminQuestionBankRoute
   '/superadmin/results': typeof SuperadminResultsRoute
@@ -193,6 +202,7 @@ export interface FileRouteTypes {
     | '/superadmin/admins'
     | '/superadmin/data'
     | '/superadmin/monitor'
+    | '/superadmin/otp'
     | '/superadmin/papers'
     | '/superadmin/question-bank'
     | '/superadmin/results'
@@ -213,6 +223,7 @@ export interface FileRouteTypes {
     | '/superadmin/admins'
     | '/superadmin/data'
     | '/superadmin/monitor'
+    | '/superadmin/otp'
     | '/superadmin/papers'
     | '/superadmin/question-bank'
     | '/superadmin/results'
@@ -233,6 +244,7 @@ export interface FileRouteTypes {
     | '/superadmin/admins'
     | '/superadmin/data'
     | '/superadmin/monitor'
+    | '/superadmin/otp'
     | '/superadmin/papers'
     | '/superadmin/question-bank'
     | '/superadmin/results'
@@ -254,6 +266,7 @@ export interface RootRouteChildren {
   SuperadminAdminsRoute: typeof SuperadminAdminsRoute
   SuperadminDataRoute: typeof SuperadminDataRoute
   SuperadminMonitorRoute: typeof SuperadminMonitorRoute
+  SuperadminOtpRoute: typeof SuperadminOtpRoute
   SuperadminPapersRoute: typeof SuperadminPapersRoute
   SuperadminQuestionBankRoute: typeof SuperadminQuestionBankRoute
   SuperadminResultsRoute: typeof SuperadminResultsRoute
@@ -350,6 +363,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SuperadminMonitorRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/superadmin/otp': {
+      id: '/superadmin/otp'
+      path: '/superadmin/otp'
+      fullPath: '/superadmin/otp'
+      preLoaderRoute: typeof SuperadminOtpRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/superadmin/papers': {
       id: '/superadmin/papers'
       path: '/superadmin/papers'
@@ -406,6 +426,7 @@ const rootRouteChildren: RootRouteChildren = {
   SuperadminAdminsRoute: SuperadminAdminsRoute,
   SuperadminDataRoute: SuperadminDataRoute,
   SuperadminMonitorRoute: SuperadminMonitorRoute,
+  SuperadminOtpRoute: SuperadminOtpRoute,
   SuperadminPapersRoute: SuperadminPapersRoute,
   SuperadminQuestionBankRoute: SuperadminQuestionBankRoute,
   SuperadminResultsRoute: SuperadminResultsRoute,

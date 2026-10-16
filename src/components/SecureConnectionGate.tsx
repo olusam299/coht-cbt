@@ -47,7 +47,7 @@ export function SecureConnectionGate({ children }: { children: ReactNode }) {
   return (
     <>
       {state === "insecure-dev" ? (
-        <div role="alert" className="bg-amber-100 px-4 py-2 text-center text-xs font-medium text-amber-900">
+        <div role="alert" className="bg-amber-100 px-4 py-2 text-center text-xs font-medium text-amber-900 dark:bg-amber-500/20 dark:text-amber-200">
           Development only: this page is not served over HTTPS. Do not use real OTPs here.
         </div>
       ) : null}
