@@ -58,3 +58,13 @@ cloudflared tunnel --url http://localhost:8081
 ```
 
 Open the `https://….trycloudflare.com` address it prints on the phone.
+
+## Deploying
+
+```powershell
+npm i -g wrangler
+wrangler login
+npm run deploy
+```
+
+`npm run deploy` builds the app and publishes it to Cloudflare as `coht-cbt` (the address is `https://coht-cbt.<your-subdomain>.workers.dev`). Put `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` in a git-ignored `.env.production` file first. To use a different name, change `--name` in the `deploy` script.
